@@ -1,0 +1,20 @@
+[package]
+name = "cli"
+version = "0.1.0"
+authors = ["Brandon Dail <brandon.dail@discordapp.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+async-std = { version = "1.6.3", features = ["attributes"]}
+clap = "3.0.0-beta.1"
+log = "0.4.11"
+pretty_env_logger = "0.4.0"
+crossbeam-channel = "0.4.0"
+notify = "5.0.0-pre.3"
+salsa = "0.15.2"
+walkdir = "2.3.1"
+db = { path = "../db" }
+compiler = { path = "../compiler" }
+diagnostics = { path = "../diagnostics" }

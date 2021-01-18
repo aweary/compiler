@@ -1,0 +1,167 @@
+{
+	"$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+	"name": "WebScript",
+	"patterns": [
+		{
+			"include": "#keywords"
+		},
+		{
+			"include": "#types"
+		},
+		{
+			"include": "#strings"
+		},
+		{
+			"include": "#comment"
+		},
+		{
+			"include": "#boolean-literal"
+		},
+		{
+			"include": "#numeric-literal"
+		}
+	],
+	"foldingStartMarker": "\\{\\s*$",
+	"foldingStopMarker": "^\\s*\\}",
+	"repository": {
+		"keywords": {
+			"patterns": [{
+				"name": "keyword.control.webscript",
+				"match": "\\b(as|pub|type|if|else|while|for|return|fn|component|state|struct|enum|import|let|const)\\b"
+			}]
+		},
+		"types": {
+			"patterns": [{
+				"match": "\\b(string|number|bool|unit)\\b",
+				"name":"entity.name.type"
+			}]
+		},
+		"strings": {
+			"name": "string.quoted.double.webscript",
+			"begin": "\"",
+			"end": "\"",
+			"patterns": [
+				{
+					"name": "constant.character.escape.webscript",
+					"match": "\\\\."
+				}
+			]
+		},
+		"comment": {
+			"begin": "(^[ \\t]+)?((#)(?:\\s*((@)internal)(?=\\s|$))?)",
+			"beginCaptures": {
+				"1": {
+					"name": "punctuation.whitespace.comment.leading.ws"
+				},
+				"2": {
+					"name": "comment.line.double-slash.ws"
+				},
+				"3": {
+					"name": "punctuation.definition.comment.ws"
+				},
+				"4": {
+					"name": "storage.type.internaldeclaration.ws"
+				},
+				"5": {
+					"name": "punctuation.decorator.internaldeclaration.ws"
+				}
+			},
+			"end": "(?=^)",
+			"contentName": "comment.line.double-slash.ws"
+		},
+		"boolean-literal": {
+			"patterns": [
+				{
+					"name": "constant.language.boolean.true.ws",
+					"match": "(?<![_$[:alnum:]])(?:(?<=\\.\\.\\.)|(?<!\\.))true(?![_$[:alnum:]])(?:(?=\\.\\.\\.)|(?!\\.))"
+				},
+				{
+					"name": "constant.language.boolean.false.ws",
+					"match": "(?<![_$[:alnum:]])(?:(?<=\\.\\.\\.)|(?<!\\.))false(?![_$[:alnum:]])(?:(?=\\.\\.\\.)|(?!\\.))"
+				}
+			]
+		},
+		"numeric-literal": {
+			"patterns": [
+				{
+					"name": "constant.numeric.hex.ws",
+					"match": "\\b(?<!\\$)0(?:x|X)[0-9a-fA-F][0-9a-fA-F_]*(n)?\\b(?!\\$)",
+					"captures": {
+						"1": {
+							"name": "storage.type.numeric.bigint.ws"
+						}
+					}
+				},
+				{
+					"name": "constant.numeric.binary.ws",
+					"match": "\\b(?<!\\$)0(?:b|B)[01][01_]*(n)?\\b(?!\\$)",
+					"captures": {
+						"1": {
+							"name": "storage.type.numeric.bigint.ws"
+						}
+					}
+				},
+				{
+					"name": "constant.numeric.octal.ws",
+					"match": "\\b(?<!\\$)0(?:o|O)?[0-7][0-7_]*(n)?\\b(?!\\$)",
+					"captures": {
+						"1": {
+							"name": "storage.type.numeric.bigint.ws"
+						}
+					}
+				},
+				{
+					"match": "(?x)\n(?<!\\$)(?:\n  (?:\\b[0-9][0-9_]*(\\.)[0-9][0-9_]*[eE][+-]?[0-9][0-9_]*(n)?\\b)| # 1.1E+3\n  (?:\\b[0-9][0-9_]*(\\.)[eE][+-]?[0-9][0-9_]*(n)?\\b)|             # 1.E+3\n  (?:\\B(\\.)[0-9][0-9_]*[eE][+-]?[0-9][0-9_]*(n)?\\b)|             # .1E+3\n  (?:\\b[0-9][0-9_]*[eE][+-]?[0-9][0-9_]*(n)?\\b)|                 # 1E+3\n  (?:\\b[0-9][0-9_]*(\\.)[0-9][0-9_]*(n)?\\b)|                      # 1.1\n  (?:\\b[0-9][0-9_]*(\\.)(n)?\\B)|                                  # 1.\n  (?:\\B(\\.)[0-9][0-9_]*(n)?\\b)|                                  # .1\n  (?:\\b[0-9][0-9_]*(n)?\\b(?!\\.))                                 # 1\n)(?!\\$)",
+					"captures": {
+						"0": {
+							"name": "constant.numeric.decimal.ws"
+						},
+						"1": {
+							"name": "meta.delimiter.decimal.period.ws"
+						},
+						"2": {
+							"name": "storage.type.numeric.bigint.ws"
+						},
+						"3": {
+							"name": "meta.delimiter.decimal.period.ws"
+						},
+						"4": {
+							"name": "storage.type.numeric.bigint.ws"
+						},
+						"5": {
+							"name": "meta.delimiter.decimal.period.ws"
+						},
+						"6": {
+							"name": "storage.type.numeric.bigint.ws"
+						},
+						"7": {
+							"name": "storage.type.numeric.bigint.ws"
+						},
+						"8": {
+							"name": "meta.delimiter.decimal.period.ws"
+						},
+						"9": {
+							"name": "storage.type.numeric.bigint.ws"
+						},
+						"10": {
+							"name": "meta.delimiter.decimal.period.ws"
+						},
+						"11": {
+							"name": "storage.type.numeric.bigint.ws"
+						},
+						"12": {
+							"name": "meta.delimiter.decimal.period.ws"
+						},
+						"13": {
+							"name": "storage.type.numeric.bigint.ws"
+						},
+						"14": {
+							"name": "storage.type.numeric.bigint.ws"
+						}
+					}
+				}
+			]
+		}
+	},
+	"scopeName": "source.ws"
+}

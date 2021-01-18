@@ -1,0 +1,16 @@
+[workspace]
+
+members = [
+    "cli",
+    "common",
+    "compiler",
+    "db",
+    "diagnostics",
+    "lexer",
+    "lsp",
+    "parser",
+    "session",
+    "syntax",
+    "types",
+    "vfs"
+]

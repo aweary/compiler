@@ -1,0 +1,25 @@
+{
+    "name": "webscript",
+    "displayName": "WebScript",
+    "description": "",
+    "version": "0.0.1",
+    "engines": {
+        "vscode": "^1.48.0"
+    },
+    "categories": [
+        "Programming Languages"
+    ],
+    "contributes": {
+        "languages": [{
+            "id": "webscript",
+            "aliases": ["WebScript", "webscript"],
+            "extensions": [".ws"],
+            "configuration": "./language-configuration.json"
+        }],
+        "grammars": [{
+            "language": "webscript",
+            "scopeName": "source.ws",
+            "path": "./syntaxes/webscript.tmLanguage.json"
+        }]
+    }
+}

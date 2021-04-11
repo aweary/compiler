@@ -1,5 +1,5 @@
 use crate::span::Span;
-use crate::symbol::Symbol;
+use common::symbol::Symbol;
 use crate::Precedence;
 use std::fmt::{Debug, Display};
 

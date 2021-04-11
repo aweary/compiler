@@ -5,7 +5,7 @@ use std::collections::VecDeque;
 use std::iter::{Iterator, Peekable};
 use std::str::CharIndices;
 use syntax::span::Span;
-use syntax::symbol::Symbol;
+use common::symbol::Symbol;
 use syntax::token::{Token, TokenKind};
 use unicode_xid::UnicodeXID;
 use log::debug;

@@ -1,20 +1,17 @@
 use common::scope_map::ScopeMap;
+use common::symbol::Symbol;
 use core::panic;
 use diagnostics::result::Result;
 use lexer::Lexer;
 use std::path::PathBuf;
 use std::sync::Arc;
-use syntax::Symbol;
 use syntax::{ast::*, Precedence, Span, Token, TokenKind};
 use vfs::FileSystem;
 
-use id_arena::Arena;
 use syntax::visit::Visitor;
 use types::Type;
 
 use log::debug;
-
-
 
 #[derive(Default)]
 pub struct Resolver {}
@@ -56,8 +53,7 @@ pub struct ParserImpl<'s> {
     lexer: Lexer<'s>,
     span: Span,
     is_newline_significant: bool,
-    scope_map: ScopeMap,
-    expressions: Arena<Expression>,
+    scope_map: ScopeMap<Symbol, Binding>,
 }
 
 impl<'s> ParserImpl<'s> {
@@ -71,7 +67,6 @@ impl<'s> ParserImpl<'s> {
             span,
             is_newline_significant: false,
             scope_map,
-            expressions: Arena::new(),
         }
     }
 
@@ -354,8 +349,10 @@ impl<'s> ParserImpl<'s> {
         if self.eat(LParen)? {
             let mut parameters = vec![];
             loop {
-                if let TokenKind::Identifier(_) = self.peek()?.kind {
+                if let TokenKind::Identifier(symbol) = self.peek()?.kind {
                     let parameter = self.parameter()?;
+                    self.scope_map
+                        .define(symbol, Binding::Parameter(Arc::new(parameter.clone())));
                     parameters.push(parameter);
                     self.eat(Comma)?;
                 } else {
@@ -400,18 +397,14 @@ impl<'s> ParserImpl<'s> {
                 span: token.span,
                 type_: Some(Type::Boolean),
             }),
-            TokenKind::Identifier(symbol) => {
-                match self.scope_map.resolve(&symbol) {
-                    Some(binding) => {
-                        let kind = ExpressionKind::Reference(binding);
-                    }
-                    None => {
-                        use diagnostics::error::unknown_reference_error;
-                        return unknown_reference_error(token.span, symbol);
-                    }
-                }
-                panic!("lol")
-            }
+            TokenKind::Identifier(symbol) => match self.scope_map.resolve(&symbol) {
+                Some((binding, _unique_reference)) => Ok(Expression {
+                    kind: ExpressionKind::Reference(binding.clone()),
+                    span: token.span,
+                    type_: None,
+                }),
+                None => diagnostics::error::unknown_reference_error(token.span, symbol),
+            },
             _ => panic!("Unknown token for expression"),
         }
     }
@@ -485,11 +478,12 @@ impl<'s> ParserImpl<'s> {
         let value = self.expression(Precedence::None)?;
         let symbol = name.symbol;
         let span = name.span.merge(value.span);
-        let unique_name = self.scope_map.unique_name();
+        // let unique_name = self.scope_map.unique_name();
         let let_ = Let {
             name,
             value,
-            unique_name,
+            // TODO
+            unique_name: UniqueName::from(0),
         };
         let let_ = Arc::new(let_);
         let binding = Binding::Let(let_.clone());

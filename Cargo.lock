@@ -266,6 +266,9 @@ dependencies = [
 [[package]]
 name = "common"
 version = "0.1.0"
+dependencies = [
+ "diagnostics",
+]
 
 [[package]]
 name = "compiler"
@@ -678,6 +681,7 @@ checksum = "830d08ce1d1d941e6b30645f1a0eb5643013d835ce3779a5fc208261dbe10f55"
 name = "lexer"
 version = "0.1.0"
 dependencies = [
+ "common",
  "diagnostics",
  "log",
  "salsa",
@@ -950,6 +954,7 @@ dependencies = [
 name = "parser"
 version = "0.1.0"
 dependencies = [
+ "common",
  "diagnostics",
  "id-arena",
  "lexer",
@@ -1268,6 +1273,7 @@ dependencies = [
 name = "syntax"
 version = "0.1.0"
 dependencies = [
+ "common",
  "diagnostics",
  "id-arena",
  "types",

@@ -1,8 +1,9 @@
 use crate::span::Span;
-use crate::symbol::Symbol;
+use common::scope_map::Referant;
+use common::symbol::Symbol;
 
-use types::Type;
 use std::sync::Arc;
+use types::Type;
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct UniqueName(u32);
@@ -117,6 +118,14 @@ pub struct Variant {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Binding {
+    Let(Arc<Let>),
+    Parameter(Arc<Parameter>),
+}
+
+impl Referant for Binding {}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ExpressionKind {
     // TODO(aweary) don't use u32 for the value representation
     Number {
@@ -133,7 +142,7 @@ pub enum ExpressionKind {
         op: BinOp,
     },
     Boolean(bool),
-    Reference(Binding)
+    Reference(Binding),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

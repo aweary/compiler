@@ -1,5 +1,5 @@
-fn test(x: number) {
-    let a = 1
-    let c = 3
-    let b = c + 2 
+const TIMEOUT = 10.223423 * 10 / 4.2342 - 2343 * 234
+
+fn test(xsdfsd: number) {
+    let b = 1000 + xsdfsd
 }

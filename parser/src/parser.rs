@@ -464,7 +464,6 @@ impl<'s> ParserImpl<'s> {
 
     fn expression(&mut self, precedence: Precedence) -> Result<Expression> {
         let mut expression = self.prefix_expression()?;
-        debug!("PREFIX {:#?}", expression);
         while precedence < self.peek()?.precedence() {
             expression = self.infix_expression(expression)?;
         }
@@ -494,10 +493,22 @@ impl<'s> ParserImpl<'s> {
         })
     }
 
+    fn return_(&mut self) -> Result<Statement> {
+        self.expect(TokenKind::Return)?;
+        let span = self.span;
+        let value = self.expression(Precedence::None)?;
+        let span = span.merge(value.span);
+        Ok(Statement {
+            kind: StatementKind::Return(value),
+            span,
+        })
+    }
+
     fn statement(&mut self) -> Result<Statement> {
         match self.peek()?.kind {
             // Let statement, e.g., `let a = 1`
             TokenKind::Let => self.let_(),
+            TokenKind::Return => self.return_(),
             _ => panic!("unknown"),
         }
     }
@@ -534,11 +545,13 @@ impl<'s> ParserImpl<'s> {
 
     fn function(&mut self) -> Result<Function> {
         self.expect(TokenKind::Fn)?;
+        self.scope_map.extend();
         let name = self.identifier()?;
         let type_parameters = self.type_parameters()?;
         let parameters = self.parameters()?;
         let (return_type, effect_type) = self.type_and_effect_annotation()?;
         let body = self.block()?;
+        self.scope_map.pop();
         Ok(Function {
             name,
             type_parameters,
@@ -616,6 +629,7 @@ impl<'s> ParserImpl<'s> {
     fn const_(&mut self) -> Result<Const> {
         self.expect(TokenKind::Const)?;
         let name = self.identifier()?;
+        let symbol = name.symbol;
         let type_ = if self.eat(TokenKind::Colon)? {
             Some(self.type_()?)
         } else {
@@ -623,7 +637,10 @@ impl<'s> ParserImpl<'s> {
         };
         self.expect(TokenKind::Equals)?;
         let value = self.expression(Precedence::None)?;
-        Ok(Const { name, type_, value })
+        let const_ = Const { name, type_, value };
+        self.scope_map
+            .define(symbol, Binding::Const(Arc::new(const_.clone())));
+        Ok(const_)
     }
 
     fn struct_fields(&mut self) -> Result<Vec<StructField>> {

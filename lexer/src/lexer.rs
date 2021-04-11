@@ -217,6 +217,7 @@ impl<'s> Lexer<'s> {
                 "struct" => Struct,
                 "const" => Const,
                 "pub" => Pub,
+                "return" => Return,
                 _ => {
                     let symbol = Symbol::intern(word);
                     Identifier(symbol)

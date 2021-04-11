@@ -40,6 +40,7 @@ impl<K: Reference, V: Referant> Scope<K, V> {
     }
 }
 
+#[derive(Debug)]
 pub struct ScopeMap<K: Reference, V: Referant> {
     unique_id: u16,
     scopes: Vec<Scope<K, V>>,
@@ -79,14 +80,20 @@ impl<K: Reference, V: Referant> ScopeMap<K, V> {
     pub fn define(&mut self, identifer: K, binding: V) -> UniqueReference<K> {
         let unique_reference = self.generate_unique_reference();
         self.scopes
-            .first_mut()
-            .unwrap()
+            .last_mut()
+            .expect("There must always be a scope")
             .bindings
             .insert(identifer, (binding, unique_reference));
         self.unique_id += 1;
         unique_reference
     }
     pub fn resolve(&mut self, identifer: &K) -> Option<&(V, UniqueReference<K>)> {
-        self.scopes.first().unwrap().bindings.get(identifer)
+        for scope in self.scopes.iter().rev() {
+            match scope.bindings.get(identifer) {
+                Some(binding) => return Some(binding),
+                None => continue,
+            }
+        }
+        None
     }
 }

@@ -133,6 +133,8 @@ pub enum TokenKind {
     Interface,
     /// The 'pub' keyword
     Pub,
+    /// The 'return' keyword
+    Return,
     /// A user-defined identifier
     Identifier(Symbol),
     /// A string literggal
@@ -209,6 +211,7 @@ impl Display for TokenKind {
             TokenKind::False => write!(f, "false"),
             TokenKind::Interface => write!(f, "interface"),
             TokenKind::Pub => write!(f, "pub"),
+            TokenKind::Return => write!(f, "return"),
             // TODO implement Display for Symbol
             TokenKind::Identifier(sym) => write!(f, "{:?}", sym),
             TokenKind::String(sym) => write!(f, "\"{:?}\"", sym),

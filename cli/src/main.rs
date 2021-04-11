@@ -51,25 +51,25 @@ async fn build(options: BuildOptions) {
     db.set_file_text(entry_point.clone(), text.into());
     // Compile the entry point module so we can start building up
     // the import graph.
-    let _ = db.compile(entry_point.clone());
+    let compiled = db.compile(entry_point.clone());
     // let ast = {
     //     let text = fs::read_to_string(entry_point.clone()).await.unwrap();
     //     db.set_file_text(entry_point.clone(), text.into());
     //     db.parse(entry_point.clone())
     // };
-    // match ast {
-    //     Ok(ast) => {
-    //         debug!("ast: {:#?}", ast);
-    //     }
-    //     Err(error) => {
-    //         let path_str = entry_point.to_str().unwrap_or("Unknown File");
-    //         use diagnostics::error::{report_diagnostic_to_term, Error};
-    //         if let Error::Diagnostic(diagnostic) = error {
-    //             let source = db.file_text(entry_point.clone());
-    //             report_diagnostic_to_term(diagnostic, path_str, &source);
-    //         }
-    //     }
-    // }
+    match compiled {
+        Ok(ast) => {
+            debug!("ast: {:#?}", ast);
+        }
+        Err(error) => {
+            let path_str = entry_point.to_str().unwrap_or("Unknown File");
+            use diagnostics::error::{report_diagnostic_to_term, Error};
+            if let Error::Diagnostic(diagnostic) = error {
+                let source = db.file_text(entry_point.clone());
+                report_diagnostic_to_term(diagnostic, path_str, &source);
+            }
+        }
+    }
 }
 
 async fn watch(options: WatchOptions) {

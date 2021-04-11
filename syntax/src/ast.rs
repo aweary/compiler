@@ -121,6 +121,7 @@ pub struct Variant {
 pub enum Binding {
     Let(Arc<Let>),
     Parameter(Arc<Parameter>),
+    Const(Arc<Const>),
 }
 
 impl Referant for Binding {}
@@ -179,6 +180,7 @@ pub enum StatementKind {
     ForIn(ForIn),
     While(While),
     If(If),
+    Return(Expression)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use crate::ast::*;
 use diagnostics::result::Result;
 
@@ -7,19 +9,19 @@ pub trait Visitor: Sized {
         walk_module(self, module)
     }
 
-    fn visit_enum(&mut self, _enum: &mut Enum) -> Result<()> {
+    fn visit_enum(&mut self, _enum: &mut Arc<Enum>) -> Result<()> {
         Ok(())
     }
 
-    fn visit_struct(&mut self, _struct: &mut Struct) -> Result<()> {
+    fn visit_struct(&mut self, _struct: &mut Arc<Struct>) -> Result<()> {
         Ok(())
     }
 
-    fn visit_const(&mut self, _const: &mut Const) -> Result<()> {
+    fn visit_const(&mut self, _const: &mut Arc<Const>) -> Result<()> {
         Ok(())
     }
 
-    fn visit_function(&mut self, _function: &mut Function) -> Result<()> {
+    fn visit_function(&mut self, _function: &mut Arc<Function>) -> Result<()> {
         Ok(())
     }
 
@@ -58,6 +60,9 @@ pub fn walk_module(visitor: &mut impl Visitor, module: &mut Module) -> Result<()
             }
             DefinitionKind::Const(const_) => {
                 visitor.visit_const(const_)?;
+            }
+            DefinitionKind::Type(_type_) => {
+                // visitor.visit_type(type_)?;
             }
         }
     }

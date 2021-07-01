@@ -75,8 +75,6 @@ impl<K: Reference, V: Referant> ScopeMap<K, V> {
         self.scopes.pop();
     }
 
-    // TODO ExpressionId isn't going to be sufficient. How do we deal with references
-    // to types? imports?
     pub fn define(&mut self, identifer: K, binding: V) -> UniqueReference<K> {
         let unique_reference = self.generate_unique_reference();
         self.scopes

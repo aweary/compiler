@@ -64,7 +64,7 @@ impl Token {
         use Precedence::*;
         use TokenKind::*;
         match &self.kind {
-            LBrace | LParen => Prefix,
+            LParen => Prefix,
             Dot => Prefix,
             Equals => Assignment,
             // PlusEquals => ASSIGNMENT,
@@ -79,6 +79,7 @@ impl Token {
             // Div => PRODUCT,
             // DblEquals => COMPARE,
             LessThan | GreaterThan => Compare,
+            Range => Prefix,
             _ => None,
         }
     }
@@ -109,6 +110,8 @@ pub enum TokenKind {
     Enum,
     /// The 'struct' keyword
     Struct,
+    /// The 'type' keyword
+    Type,
     /// The 'const' keyword
     Const,
     /// The 'for' keyword
@@ -145,6 +148,8 @@ pub enum TokenKind {
     Newline,
     /// The '=' character
     Equals,
+    /// The '=>' character
+    Arrow,
     /// The '.' character
     Dot,
     /// The ',' character
@@ -212,6 +217,7 @@ impl Display for TokenKind {
             TokenKind::Interface => write!(f, "interface"),
             TokenKind::Pub => write!(f, "pub"),
             TokenKind::Return => write!(f, "return"),
+            TokenKind::Type => write!(f, "type"),
             // TODO implement Display for Symbol
             TokenKind::Identifier(sym) => write!(f, "{:?}", sym),
             TokenKind::String(sym) => write!(f, "\"{:?}\"", sym),
@@ -239,6 +245,7 @@ impl Display for TokenKind {
             TokenKind::Or => write!(f, "||"),
             TokenKind::And => write!(f, "&&"),
             TokenKind::Pipeline => write!(f, "|>"),
+            &TokenKind::Arrow => write!(f, "=>"),
         }
     }
 }

@@ -7,6 +7,7 @@ use std::fmt::Display;
 use std::ops::Range;
 
 const UNEXPECTED_TOKEN_ERROR_TITLE: &str = "Unexpected Token";
+const ILLEGAL_FUNCTION_CALLEE_TITLE: &str = "Illegal Function Call";
 const UNEXPECTED_CHARACTER_ERROR_TITLE: &str = "Unexpected Character";
 const EMPTY_TYPE_PARAMETERS: &str = "Type parameters cannot be empty";
 const UNKNOWN_REFERENCE: &str = "Unknown Reference";
@@ -98,6 +99,18 @@ pub fn unexpected_token_error<T>(
     Err(crate::error::Error::Diagnostic(diagnostic))
 }
 
+/// Report an unexpected token error for the parser
+pub fn illegal_function_callee<T>(
+    span: impl Into<Range<usize>>,
+) -> Result<T> {
+    let label = Label {
+        message: format!("You can't call this as a function, dumb bitch"),
+        range: span.into(),
+    };
+    let diagnostic = Diagnostic::error(ILLEGAL_FUNCTION_CALLEE_TITLE.into(), vec![label]);
+    Err(crate::error::Error::Diagnostic(diagnostic))
+}
+
 /// Report an unknown reference error for the parser
 pub fn unknown_reference_error<T>(
     span: impl Into<Range<usize>>,
@@ -158,6 +171,16 @@ pub fn invalid_character<T>(span: impl Into<Range<usize>>) -> Result<T> {
     let diagnostic = Diagnostic::error(UNEXPECTED_CHARACTER_ERROR_TITLE.into(), vec![label]);
     Err(crate::error::Error::Diagnostic(diagnostic))
 }
+
+pub fn multiple_decimal_in_number<T>(span: impl Into<Range<usize>>) -> Result<T> {
+    let label = Label {
+        message: "You can't have multiple decimal points in a number".into(),
+        range: span.into(),
+    };
+    let diagnostic = Diagnostic::error(UNEXPECTED_TOKEN_ERROR_TITLE.into(), vec![label]);
+    Err(crate::error::Error::Diagnostic(diagnostic))
+}
+
 
 /// Report an empty type parameter list
 pub fn empty_type_parameters<T>(span: impl Into<Range<usize>>) -> Result<T> {

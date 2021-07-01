@@ -13,7 +13,7 @@ syntax = { path = "../syntax" }
 diagnostics = { path = "../diagnostics" }
 types = { path = "../types" }
 vfs = { path = "../vfs" }
-salsa = "0.15.2"
+salsa = "0.17.0-pre.1"
 log = "0.4.11"
 id-arena = "2.2.1"
 common = { path = "../common" }

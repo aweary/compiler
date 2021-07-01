@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use parser::ParserDatabase;
 use vfs::FileSystemDatabase;
 
-use syntax::ast::{Const, Expression};
+use syntax::ast::{Const};
 use syntax::visit::Visitor;
 
 use log::debug;
@@ -12,44 +12,48 @@ use log::debug;
 #[derive(Default)]
 struct ConstEvaluationStep {}
 
+// enum Value {
+//     Number(f64),
+//     Boolean(bool),
+// }
+
 impl Visitor for ConstEvaluationStep {
-    fn visit_const(&mut self, const_: &mut Const) -> Result<()> {
+    fn visit_const(&mut self, const_: &mut std::sync::Arc<Const>) -> Result<()> {
         debug!("evaluate: {:#?}", const_);
-        let value = evaluate_numeric_expression(&const_.value);
-        debug!("value: {:#?}", value);
+        // let value = evaluate_numeric_expression(&const_.value);
+        // debug!("value: {:#?}", value);
         Ok(())
     }
 }
 
-fn evaluate_numeric_expression(expression: &Expression) -> f64 {
-    match &expression.kind {
-        syntax::ast::ExpressionKind::Number { raw, .. } => {
-            (*raw).into()
-        },
-        syntax::ast::ExpressionKind::Binary { left, right, op } => {
-            let left: f64 = evaluate_numeric_expression(&*left);
-            let right: f64 = evaluate_numeric_expression(&*right);
-            match op {
-                syntax::ast::BinOp::Add => left + right,
-                syntax::ast::BinOp::Sub => left - right,
-                syntax::ast::BinOp::Sum => left + right,
-                syntax::ast::BinOp::Mul => left * right,
-                syntax::ast::BinOp::Div => left / right,
-                syntax::ast::BinOp::Mod => left % right,
-                // syntax::ast::BinOp::BinAdd => left & right,
-                // syntax::ast::BinOp::BinOr => left | right,
-                // syntax::ast::BinOp::GreaterThan => {}
-                // syntax::ast::BinOp::LessThan => {}
-                // syntax::ast::BinOp::Pipeline => {}
-                // syntax::ast::BinOp::BinOr => {}
-                // syntax::ast::BinOp::BinAdd => {}
-                _ => panic!("unsupported"),
-            }
-        }
-        _ => panic!("unsupported"), // syntax::ast::ExpressionKind::String { raw } => {}
-                                    // syntax::ast::ExpressionKind::Boolean() => {}
-    }
-}
+// fn evaluate_numeric_expression(expression: &Expression) -> Value {
+//     match &expression.kind {
+//         syntax::ast::ExpressionKind::Number { raw, .. } => (*raw).into(),
+//         syntax::ast::ExpressionKind::Binary { left, right, op } => {
+//             let left: f64 = evaluate_numeric_expression(&*left);
+//             let right: f64 = evaluate_numeric_expression(&*right);
+//             match op {
+//                 syntax::ast::BinOp::Add => Value::Number(left + right),
+//                 syntax::ast::BinOp::Sub => Value::Number(left - right),
+//                 syntax::ast::BinOp::Sum => Value::Number(left + right),
+//                 syntax::ast::BinOp::Mul => Value::Number(left * right),
+//                 syntax::ast::BinOp::Div => Value::Number(left / right),
+//                 syntax::ast::BinOp::Mod => Value::Number(left % right),
+//                 syntax::ast::BinOp::LessThan => Value::Boolean(left < right),
+//                 syntax::ast::BinOp::GreaterThan => Value::Boolean(left > right),
+//                 // syntax::ast::BinOp::BinAdd => left & right,
+//                 // syntax::ast::BinOp::BinOr => left | right,
+//                 // syntax::ast::BinOp::GreaterThan => {}
+//                 // syntax::ast::BinOp::Pipeline => {}
+//                 // syntax::ast::BinOp::BinOr => {}
+//                 // syntax::ast::BinOp::BinAdd => {}
+//                 _ => panic!("unsupported"),
+//             }
+//         }
+//         _ => panic!("unsupported"), // syntax::ast::ExpressionKind::String { raw } => {}
+//                                     // syntax::ast::ExpressionKind::Boolean() => {}
+//     }
+// }
 
 ///////////////
 

@@ -5,6 +5,7 @@ use diagnostics::result::Result;
 use lexer::Lexer;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::vec;
 use syntax::{ast::*, Precedence, Span, Token, TokenKind};
 use vfs::FileSystem;
 
@@ -22,12 +23,12 @@ impl Visitor for Resolver {
         Ok(())
     }
 
-    fn visit_enum(&mut self, enum_: &mut Enum) -> Result<()> {
+    fn visit_enum(&mut self, enum_: &mut Arc<Enum>) -> Result<()> {
         debug!("Visiting enum: {:#?}", enum_);
         Ok(())
     }
 
-    fn visit_struct(&mut self, struct_: &mut Struct) -> Result<()> {
+    fn visit_struct(&mut self, struct_: &mut Arc<Struct>) -> Result<()> {
         debug!("Visiting struct: {:#?}", struct_);
         Ok(())
     }
@@ -54,6 +55,7 @@ pub struct ParserImpl<'s> {
     span: Span,
     is_newline_significant: bool,
     scope_map: ScopeMap<Symbol, Binding>,
+    type_scope_map: ScopeMap<Symbol, TypeBinding>,
 }
 
 impl<'s> ParserImpl<'s> {
@@ -61,12 +63,14 @@ impl<'s> ParserImpl<'s> {
     pub fn new(source: &'s str) -> Self {
         let lexer = Lexer::new(source);
         let scope_map = ScopeMap::default();
+        let type_scope_map = ScopeMap::default();
         let span = Span::new(0, 0);
         Self {
             lexer,
             span,
             is_newline_significant: false,
             scope_map,
+            type_scope_map,
         }
     }
 
@@ -248,6 +252,10 @@ impl<'s> ParserImpl<'s> {
                 let const_ = self.const_()?;
                 DefinitionKind::Const(const_)
             }
+            TokenKind::Type => {
+                let type_def = self.type_def()?;
+                DefinitionKind::Type(type_def)
+            }
             // TokenKind::EOF => return Ok(definitions),
             _ => {
                 use diagnostics::error::unexpected_token_error_with_multiple_options;
@@ -310,10 +318,68 @@ impl<'s> ParserImpl<'s> {
         }
     }
 
+    fn type_(&mut self) -> Result<TypeExpression> {
+        // Parse function parameters for types like (a: string, b: int) => int
+        if self.eat(TokenKind::LParen)? {
+            let span = self.span;
+            let mut parameters = vec![];
+            loop {
+                if self.peek()?.kind == TokenKind::RParen {
+                    break;
+                }
+                let type_ = self.type_()?;
+                parameters.push(type_);
+                if self.eat(TokenKind::Comma)? {
+                    continue;
+                } else {
+                    break;
+                }
+            }
+            self.expect(TokenKind::RParen)?;
+            self.expect(TokenKind::Arrow)?;
+            let return_type = self.type_()?.into();
+            let span = span.merge(self.span);
+            let kind = TypeExpressionKind::Function {
+                parameters,
+                return_type,
+            };
+            return Ok(TypeExpression {
+                kind,
+                span,
+                type_: None,
+            });
+        }
+        let type_ = self.reference_type()?;
+        let span = type_.span;
+        // Parse a function type
+        if self.eat(TokenKind::Arrow)? {
+            let parameters = vec![type_];
+            let return_type = self.type_()?.into();
+            let kind = TypeExpressionKind::Function {
+                parameters,
+                return_type,
+            };
+            let span = self.span.merge(span);
+            let type_ = TypeExpression {
+                kind,
+                span,
+                type_: None,
+            };
+            Ok(type_)
+        } else {
+            Ok(type_)
+        }
+    }
+
     /// Parses a type reference, like what you would see in type
     /// annotations. It does not parse type _definitions_.
-    fn type_(&mut self) -> Result<TypeExpression> {
+    fn reference_type(&mut self) -> Result<TypeExpression> {
         let name = self.identifier()?;
+        let span = self.span;
+        // How can we represent user types at this point? We don't want the types crate to depend on the AST
+        let _type = self.type_scope_map.resolve(&name.symbol).map(|binding| {
+            println!("{:#?}", binding);
+        });
         let arguments = if self.eat(TokenKind::LessThan)? {
             let mut arguments = vec![];
             loop {
@@ -330,7 +396,14 @@ impl<'s> ParserImpl<'s> {
         } else {
             None
         };
-        Ok(TypeExpression { name, arguments })
+        let span = self.span.merge(span);
+        let kind = TypeExpressionKind::Reference { name, arguments };
+        let type_ = TypeExpression {
+            kind,
+            span,
+            type_: None,
+        };
+        Ok(type_)
     }
 
     /// Parses a function or component parameter.
@@ -344,17 +417,24 @@ impl<'s> ParserImpl<'s> {
         Ok(Parameter { name, type_ })
     }
 
-    fn parameters(&mut self) -> Result<Option<Vec<Parameter>>> {
+    fn parameters(&mut self) -> Result<Option<Vec<Arc<Parameter>>>> {
         use TokenKind::{Comma, LParen, RParen};
         if self.eat(LParen)? {
             let mut parameters = vec![];
             loop {
                 if let TokenKind::Identifier(symbol) = self.peek()?.kind {
                     let parameter = self.parameter()?;
+                    let parameter = Arc::new(parameter);
                     self.scope_map
-                        .define(symbol, Binding::Parameter(Arc::new(parameter.clone())));
+                        .define(symbol, Binding::Parameter(parameter.clone()));
                     parameters.push(parameter);
-                    self.eat(Comma)?;
+                    if self.eat(Comma)? {
+                        // Another parameter, continue
+                        continue;
+                    } else {
+                        // Expect the end of the params list
+                        break;
+                    }
                 } else {
                     break;
                 }
@@ -386,14 +466,8 @@ impl<'s> ParserImpl<'s> {
                 span: token.span,
                 type_: Some(Type::String),
             }),
-            TokenKind::True => Ok(Expression {
-                kind: ExpressionKind::Boolean(true),
-                span: token.span,
-                type_: Some(Type::Boolean),
-            }),
-            // TODO(aweary) how to dedupe with `true`?
-            TokenKind::False => Ok(Expression {
-                kind: ExpressionKind::Boolean(false),
+            TokenKind::True | TokenKind::False => Ok(Expression {
+                kind: ExpressionKind::Boolean(token.kind == TokenKind::True),
                 span: token.span,
                 type_: Some(Type::Boolean),
             }),
@@ -405,7 +479,8 @@ impl<'s> ParserImpl<'s> {
                 }),
                 None => diagnostics::error::unknown_reference_error(token.span, symbol),
             },
-            _ => panic!("Unknown token for expression"),
+            TokenKind::LBracket => self.array_expression(),
+            _ => panic!("Unknown token for expression, {:#?}", token.kind),
         }
     }
 
@@ -424,6 +499,20 @@ impl<'s> ParserImpl<'s> {
                 left: left.into(),
                 right: right.into(),
                 op,
+            },
+            type_: None,
+        })
+    }
+
+    fn member_expression(&mut self, left: Expression) -> Result<Expression> {
+        self.expect(TokenKind::Dot)?;
+        let name = self.identifier()?;
+        let span = left.span.merge(name.span);
+        Ok(Expression {
+            span,
+            kind: ExpressionKind::Member {
+                object: left.into(),
+                property: name,
             },
             type_: None,
         })
@@ -453,21 +542,116 @@ impl<'s> ParserImpl<'s> {
         }
     }
 
+    fn arguments(&mut self) -> Result<Vec<Expression>> {
+        let mut arguments = vec![];
+        loop {
+            match self.peek()?.kind {
+                // End of argument list
+                TokenKind::RParen => break,
+                _ => {
+                    let argument = self.expression(Precedence::None)?;
+                    arguments.push(argument);
+                    if self.eat(TokenKind::Comma)? {
+                        continue;
+                    } else {
+                        break;
+                    }
+                }
+            }
+        }
+        Ok(arguments)
+    }
+
+    fn call_expression(&mut self, left: Expression) -> Result<Expression> {
+        let span = left.span;
+        self.expect(TokenKind::LParen)?;
+        match left.kind {
+            // Function call with a reference
+            ExpressionKind::Reference(_) | ExpressionKind::Member { .. } => {
+                let arguments = self.arguments()?;
+                let kind = ExpressionKind::Call {
+                    callee: left.into(),
+                    arguments,
+                };
+                // TODO arguments
+                self.expect(TokenKind::RParen)?;
+                let span = self.span.merge(span);
+                Ok(Expression {
+                    kind,
+                    span,
+                    type_: None,
+                })
+            }
+            _ => {
+                use diagnostics::error::illegal_function_callee;
+                illegal_function_callee(left.span)
+            }
+        }
+    }
+
     fn infix_expression(&mut self, prefix: Expression) -> Result<Expression> {
         use TokenKind::*;
         match self.peek()?.kind {
-            Plus | Minus | Star | Slash => self.binary_expression(prefix),
-            Dot => self.dot(prefix),
+            Plus | Minus | Star | Slash | LessThan | GreaterThan => self.binary_expression(prefix),
+            LParen => self.call_expression(prefix),
+            Dot => self.member_expression(prefix),
+            Range => self.range_expression(prefix),
             _ => Ok(prefix),
         }
     }
 
+    // range_expression parses a range expression like `1..10` or `1..20`
+    fn range_expression(&mut self, start: Expression) -> Result<Expression> {
+        self.expect(TokenKind::Range)?;
+        let end = self.expression(Precedence::None)?;
+        let span = start.span.merge(end.span);
+        let kind = ExpressionKind::Range {
+            start: start.into(),
+            end: end.into(),
+        };
+        Ok(Expression {
+            kind,
+            span,
+            type_: None,
+        })
+    }
+
     fn expression(&mut self, precedence: Precedence) -> Result<Expression> {
         let mut expression = self.prefix_expression()?;
+        println!("precedence: {:?}", precedence);
+        println!("peeked precedence: {:?}", self.peek()?.precedence());
         while precedence < self.peek()?.precedence() {
             expression = self.infix_expression(expression)?;
         }
+        println!("{:#?}", expression);
         Ok(expression)
+    }
+
+    fn array_expression(&mut self) -> Result<Expression> {
+        let mut elements = vec![];
+        let span = self.span;
+        loop {
+            match self.peek()?.kind {
+                TokenKind::RBracket => break,
+                _ => {
+                    let element = self.expression(Precedence::None)?;
+                    elements.push(element);
+                    if self.eat(TokenKind::Comma)? {
+                        continue;
+                    } else {
+                        break;
+                    }
+                }
+            }
+        }
+        self.expect(TokenKind::RBracket)?;
+        let kind = ExpressionKind::Array(elements);
+        let span = self.span.merge(span);
+        Ok(Expression {
+            kind,
+            span,
+            type_: None,
+        })
     }
 
     fn let_(&mut self) -> Result<Statement> {
@@ -506,21 +690,60 @@ impl<'s> ParserImpl<'s> {
 
     fn statement(&mut self) -> Result<Statement> {
         match self.peek()?.kind {
-            // Let statement, e.g., `let a = 1`
             TokenKind::Let => self.let_(),
             TokenKind::Return => self.return_(),
-            _ => panic!("unknown"),
+            TokenKind::If => self.if_(),
+            TokenKind::For => self.for_(),
+            _ => panic!("Unknown token for statement"),
         }
+    }
+
+    // Parse a for-in statement like for x in y { ... }
+    fn for_(&mut self) -> Result<Statement> {
+        self.expect(TokenKind::For)?;
+        let span = self.span;
+        let iterator = self.identifier()?;
+        self.expect(TokenKind::In)?;
+        let iterable = self.expression(Precedence::None)?;
+        println!("iterable");
+        let body = self.block()?;
+        let for_ = For {
+            iterator,
+            iterable,
+            body,
+        };
+        let span = self.span.merge(span);
+        Ok(Statement {
+            kind: StatementKind::For(for_),
+            span,
+        })
+    }
+
+    fn if_(&mut self) -> Result<Statement> {
+        self.expect(TokenKind::If)?;
+        let span = self.span;
+        self.expect(TokenKind::LParen)?;
+        let condition = self.expression(Precedence::None)?;
+        self.expect(TokenKind::RParen)?;
+        let body = self.block()?;
+        let _if = If { body, condition };
+        let span = self.span.merge(span);
+        Ok(Statement {
+            span,
+            kind: StatementKind::If(_if),
+        })
     }
 
     fn block(&mut self) -> Result<Block> {
         self.expect(TokenKind::LBrace)?;
         let mut statements = vec![];
+        self.scope_map.extend();
         while !self.peek()?.follows_statement() {
             let statement = self.statement()?;
             statements.push(statement);
         }
         self.expect(TokenKind::RBrace)?;
+        self.scope_map.pop();
         Ok(Block { statements })
     }
 
@@ -543,8 +766,32 @@ impl<'s> ParserImpl<'s> {
         Ok(annotations)
     }
 
-    fn function(&mut self) -> Result<Function> {
+    fn function(&mut self) -> Result<Arc<Function>> {
         self.expect(TokenKind::Fn)?;
+        self.scope_map.extend();
+        let name = self.identifier()?;
+        let symbol = name.symbol;
+        let type_parameters = self.type_parameters()?;
+        let parameters = self.parameters()?;
+        let (return_type, effect_type) = self.type_and_effect_annotation()?;
+        let body = self.block()?;
+        self.scope_map.pop();
+        let function = Function {
+            name,
+            type_parameters,
+            parameters,
+            return_type,
+            effect_type,
+            body,
+        };
+        let function = Arc::new(function);
+        self.scope_map
+            .define(symbol, Binding::Function(function.clone()));
+        Ok(function)
+    }
+
+    fn component(&mut self) -> Result<Component> {
+        self.expect(TokenKind::Component)?;
         self.scope_map.extend();
         let name = self.identifier()?;
         let type_parameters = self.type_parameters()?;
@@ -552,7 +799,7 @@ impl<'s> ParserImpl<'s> {
         let (return_type, effect_type) = self.type_and_effect_annotation()?;
         let body = self.block()?;
         self.scope_map.pop();
-        Ok(Function {
+        Ok(Component {
             name,
             type_parameters,
             parameters,
@@ -560,12 +807,6 @@ impl<'s> ParserImpl<'s> {
             effect_type,
             body,
         })
-    }
-
-    fn component(&mut self) -> Result<Component> {
-        self.expect(TokenKind::Fn)?;
-        let name = self.identifier()?;
-        Ok(Component { name })
     }
 
     fn enum_variant(&mut self) -> Result<Variant> {
@@ -589,10 +830,11 @@ impl<'s> ParserImpl<'s> {
         Ok(Variant { name, types })
     }
 
-    fn enum_(&mut self) -> Result<Enum> {
+    fn enum_(&mut self) -> Result<Arc<Enum>> {
         use TokenKind::{LBrace, RBrace};
         self.expect(TokenKind::Enum)?;
         let name = self.identifier()?;
+        let symbol = name.symbol;
         let type_parameters = self.type_parameters()?;
         let mut variants = vec![];
         self.expect(LBrace)?;
@@ -605,28 +847,36 @@ impl<'s> ParserImpl<'s> {
             }
         }
         self.expect(RBrace)?;
-        Ok(Enum {
+        let enum_ = Enum {
             name,
             type_parameters,
             variants,
-        })
+        };
+        let enum_ = Arc::new(enum_);
+        self.scope_map.define(symbol, Binding::Enum(enum_.clone()));
+        Ok(enum_)
     }
 
-    fn struct_(&mut self) -> Result<Struct> {
+    fn struct_(&mut self) -> Result<Arc<Struct>> {
         self.expect(TokenKind::Struct)?;
         let name = self.identifier()?;
+        let symbol = name.symbol;
         let type_parameters = self.type_parameters()?;
         self.expect(TokenKind::LBrace)?;
         let fields = self.struct_fields()?;
         self.expect(TokenKind::RBrace)?;
-        Ok(Struct {
+        let struct_ = Struct {
             name,
             type_parameters,
             fields,
-        })
+        };
+        let struct_ = Arc::new(struct_);
+        self.type_scope_map
+            .define(symbol, TypeBinding::Struct(struct_.clone()));
+        Ok(struct_)
     }
 
-    fn const_(&mut self) -> Result<Const> {
+    fn const_(&mut self) -> Result<Arc<Const>> {
         self.expect(TokenKind::Const)?;
         let name = self.identifier()?;
         let symbol = name.symbol;
@@ -637,10 +887,23 @@ impl<'s> ParserImpl<'s> {
         };
         self.expect(TokenKind::Equals)?;
         let value = self.expression(Precedence::None)?;
-        let const_ = Const { name, type_, value };
+        let const_ = Arc::new(Const { name, type_, value });
         self.scope_map
-            .define(symbol, Binding::Const(Arc::new(const_.clone())));
+            .define(symbol, Binding::Const(const_.clone()));
         Ok(const_)
+    }
+
+    fn type_def(&mut self) -> Result<Arc<TypeDef>> {
+        debug!("type_def");
+        self.expect(TokenKind::Type)?;
+        let span = self.span;
+        let name = self.identifier()?;
+        debug!("type_def {:?}", name);
+        self.expect(TokenKind::Equals)?;
+        let type_ = self.type_()?;
+        let span = span.merge(self.span);
+        let type_def = Arc::new(TypeDef { name, type_, span });
+        Ok(type_def)
     }
 
     fn struct_fields(&mut self) -> Result<Vec<StructField>> {

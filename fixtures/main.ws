@@ -1,9 +1,8 @@
-const delta = 1
-
-fn add(a: number, b: number) {
-    return a + b
+enum Result<T, E> {
+	Ok(T)
+	Err(E)
 }
 
-fn sub(c: number, d: number) {
-    return c - delta
+fn main {
+   let ok = Result.Ok("Hello").Bar()
 }

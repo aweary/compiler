@@ -1,14 +1,14 @@
 use crate::TokenStream;
-use diagnostics::error::invalid_character;
+use common::symbol::Symbol;
+use diagnostics::error::{invalid_character, multiple_decimal_in_number};
 use diagnostics::result::Result;
+use log::debug;
 use std::collections::VecDeque;
 use std::iter::{Iterator, Peekable};
 use std::str::CharIndices;
 use syntax::span::Span;
-use common::symbol::Symbol;
 use syntax::token::{Token, TokenKind};
 use unicode_xid::UnicodeXID;
-use log::debug;
 
 pub struct Lexer<'s> {
     source: &'s str,
@@ -77,7 +77,7 @@ impl<'s> Lexer<'s> {
             Some((_, '"')) => self.string(),
             Some((_, '.')) => self.dot(),
             Some((_, ',')) => self.punc(Comma),
-            Some((_, '=')) => self.punc(Equals),
+            Some((_, '=')) => self.equals(),
             Some((_, '(')) => self.punc(LParen),
             Some((_, ')')) => self.punc(RParen),
             Some((_, '{')) => self.punc(LBrace),
@@ -135,6 +135,24 @@ impl<'s> Lexer<'s> {
         let word = &self.source[start + 1..end];
         let symbol = Symbol::intern(word);
         let kind = TokenKind::String(symbol);
+        let token = Token::new(kind, span);
+        Ok(token)
+    }
+
+    // Equals can be either the '=' or '=>' operators.
+    fn equals(&mut self) -> Result<Token> {
+        let (start, _) = self.chars.next().unwrap();
+        let (span, kind) = match self.chars.peek() {
+            Some((_, '>')) => {
+                let (end, _) = self.chars.next().unwrap();
+                let span = Span::new(start as u32, end as u32);
+                (span, TokenKind::Arrow)
+            }
+            _ => {
+                let end = start;
+                (Span::new(start as u32, end as u32), TokenKind::Equals)
+            }
+        };
         let token = Token::new(kind, span);
         Ok(token)
     }
@@ -218,6 +236,7 @@ impl<'s> Lexer<'s> {
                 "const" => Const,
                 "pub" => Pub,
                 "return" => Return,
+                "type" => Type,
                 _ => {
                     let symbol = Symbol::intern(word);
                     Identifier(symbol)

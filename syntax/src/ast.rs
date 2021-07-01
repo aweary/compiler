@@ -37,10 +37,11 @@ pub struct Definition {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DefinitionKind {
-    Struct(Struct),
-    Const(Const),
-    Enum(Enum),
-    Function(Function),
+    Struct(Arc<Struct>),
+    Const(Arc<Const>),
+    Type(Arc<TypeDef>),
+    Enum(Arc<Enum>),
+    Function(Arc<Function>),
     Component(Component),
 }
 
@@ -77,12 +78,36 @@ pub struct Parameter {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TypeExpression {
-    pub name: Identifier,
-    pub arguments: Option<Vec<TypeExpression>>,
+    pub kind: TypeExpressionKind,
+    pub type_: Option<Type>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TypeExpressionKind {
+    Number,
+    String,
+    Boolean,
+    Unit,
+    Reference {
+        name: Identifier,
+        arguments: Option<Vec<TypeExpression>>,
+    },
+    Function {
+        parameters: Vec<TypeExpression>,
+        return_type: Box<TypeExpression>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Effect(pub TypeExpression);
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TypeDef {
+    pub span: Span,
+    pub name: Identifier,
+    pub type_: TypeExpression,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Struct {
@@ -120,11 +145,19 @@ pub struct Variant {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Binding {
     Let(Arc<Let>),
+    Enum(Arc<Enum>),
+    Function(Arc<Function>),
     Parameter(Arc<Parameter>),
     Const(Arc<Const>),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TypeBinding {
+    Struct(Arc<Struct>),
+}
+
 impl Referant for Binding {}
+impl Referant for TypeBinding {}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ExpressionKind {
@@ -142,8 +175,21 @@ pub enum ExpressionKind {
         right: Box<Expression>,
         op: BinOp,
     },
+    Call {
+        callee: Box<Expression>,
+        arguments: Vec<Expression>,
+    },
     Boolean(bool),
     Reference(Binding),
+    Array(Vec<Expression>),
+    Member {
+        object: Box<Expression>,
+        property: Identifier,
+    },
+    Range {
+        start: Box<Expression>,
+        end: Box<Expression>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -177,20 +223,27 @@ pub struct Expression {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StatementKind {
     Let(Arc<Let>),
-    ForIn(ForIn),
+    For(For),
     While(While),
     If(If),
-    Return(Expression)
+    Return(Expression),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct If {}
+pub struct If {
+    pub condition: Expression,
+    pub body: Block,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct While {}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ForIn {}
+pub struct For {
+    pub iterator: Identifier,
+    pub iterable: Expression,
+    pub body: Block,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Let {
@@ -214,7 +267,7 @@ pub struct Block {
 pub struct Function {
     pub name: Identifier,
     pub type_parameters: Option<TypeParameters>,
-    pub parameters: Option<Vec<Parameter>>,
+    pub parameters: Option<Vec<Arc<Parameter>>>,
     pub return_type: Option<TypeExpression>,
     pub effect_type: Option<Effect>,
     pub body: Block,
@@ -223,6 +276,11 @@ pub struct Function {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Component {
     pub name: Identifier,
+    pub type_parameters: Option<TypeParameters>,
+    pub parameters: Option<Vec<Arc<Parameter>>>,
+    pub return_type: Option<TypeExpression>,
+    pub effect_type: Option<Effect>,
+    pub body: Block,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

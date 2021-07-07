@@ -1,8 +1,11 @@
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
-pub enum Type {
+pub enum Type<Struct, Effect> {
     Unknown,
     Number,
     String,
     Boolean,
+    Unit,
+    Struct(Struct),
+    Effect(Effect)
 }

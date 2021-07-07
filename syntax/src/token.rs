@@ -1,6 +1,6 @@
 use crate::span::Span;
-use common::symbol::Symbol;
 use crate::Precedence;
+use common::symbol::Symbol;
 use std::fmt::{Debug, Display};
 
 use crate::ast::BinOp;
@@ -37,6 +37,8 @@ impl Into<BinOp> for Token {
             TokenKind::GreaterThan => GreaterThan,
             TokenKind::LessThan => LessThan,
             TokenKind::Pipeline => Pipeline,
+            TokenKind::DoubleEquals => DoubleEquals,
+            TokenKind::BinAnd => BinAnd,
             _ => panic!("Cannot covert {:?} to BinOp", self),
         }
     }
@@ -72,13 +74,13 @@ impl Token {
             // Question => CONDITIONAL,
             Plus => Sum,
             // TODO idk if this is the right precedence
-            Or | And | Pipeline => Conditional,
+            Or | And | Pipeline | BinAnd => Conditional,
             Minus => Sum,
             Star | Slash => Product,
             // Mul => PRODUCT,
             // Div => PRODUCT,
             // DblEquals => COMPARE,
-            LessThan | GreaterThan => Compare,
+            LessThan | GreaterThan | DoubleEquals => Compare,
             Range => Prefix,
             _ => None,
         }
@@ -96,6 +98,10 @@ impl Debug for Token {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TokenKind {
+    /// The 'effect' keyword
+    Effect,
+    /// The 'match' keyword
+    Match,
     /// The 'import' keyword
     Import,
     /// The 'let' keyword
@@ -148,6 +154,8 @@ pub enum TokenKind {
     Newline,
     /// The '=' character
     Equals,
+    /// The '==' character
+    DoubleEquals,
     /// The '=>' character
     Arrow,
     /// The '.' character
@@ -182,12 +190,16 @@ pub enum TokenKind {
     GreaterThan,
     /// The '|' character
     Pipe,
+    /// The '_' character
+    Underscore,
     /// The range operator, '..'S
     Range,
     /// Logical OR `||`
     Or,
     /// Logical AND `&&`
     And,
+    /// Binary AND `&`
+    BinAnd,
     /// Pipeline operator, `|>`,
     Pipeline,
     /// End-of-file
@@ -245,7 +257,12 @@ impl Display for TokenKind {
             TokenKind::Or => write!(f, "||"),
             TokenKind::And => write!(f, "&&"),
             TokenKind::Pipeline => write!(f, "|>"),
-            &TokenKind::Arrow => write!(f, "=>"),
+            TokenKind::Arrow => write!(f, "=>"),
+            TokenKind::DoubleEquals => write!(f, "=="),
+            TokenKind::BinAnd => write!(f, "&"),
+            TokenKind::Match => write!(f, "match"),
+            TokenKind::Underscore => write!(f, "_"),
+            TokenKind::Effect => write!(f, "effect"),
         }
     }
 }

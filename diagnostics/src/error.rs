@@ -100,9 +100,7 @@ pub fn unexpected_token_error<T>(
 }
 
 /// Report an unexpected token error for the parser
-pub fn illegal_function_callee<T>(
-    span: impl Into<Range<usize>>,
-) -> Result<T> {
+pub fn illegal_function_callee<T>(span: impl Into<Range<usize>>) -> Result<T> {
     let label = Label {
         message: format!("You can't call this as a function, dumb bitch"),
         range: span.into(),
@@ -112,10 +110,7 @@ pub fn illegal_function_callee<T>(
 }
 
 /// Report an unknown reference error for the parser
-pub fn unknown_reference_error<T>(
-    span: impl Into<Range<usize>>,
-    name: impl Display,
-) -> Result<T> {
+pub fn unknown_reference_error<T>(span: impl Into<Range<usize>>, name: impl Display) -> Result<T> {
     let label = Label {
         message: format!("Cannot resolve '{}'", name),
         range: span.into(),
@@ -181,6 +176,77 @@ pub fn multiple_decimal_in_number<T>(span: impl Into<Range<usize>>) -> Result<T>
     Err(crate::error::Error::Diagnostic(diagnostic))
 }
 
+pub fn illegal_assignment_target<T>(span: impl Into<Range<usize>>) -> Result<T> {
+    let label = Label {
+        message: "You can't assign to this".into(),
+        range: span.into(),
+    };
+    let diagnostic = Diagnostic::error("Invalid Assignment Target".into(), vec![label]);
+    Err(crate::error::Error::Diagnostic(diagnostic))
+}
+
+pub fn unknown_type<T>(span: impl Into<Range<usize>>, name: impl Display) -> Result<T> {
+    let label = Label {
+        message: format!("Cannot resolve '{}'", name),
+        range: span.into(),
+    };
+    let diagnostic = Diagnostic::error("Unknown Type".into(), vec![label]);
+    Err(crate::error::Error::Diagnostic(diagnostic))
+}
+
+pub fn duplicate_wildcard_error<T>(
+    first: impl Into<Range<usize>>,
+    second: impl Into<Range<usize>>,
+) -> Result<T> {
+    let primary = Label {
+        message: "You can't use a wildcard twice".into(),
+        range: second.into(),
+    };
+    let secondary = Label {
+        message: "A wildcard pattern is already used here".into(),
+        range: first.into(),
+    };
+    let diagnostic = Diagnostic::error("Duplicate Wildcard".into(), vec![primary, secondary]);
+    Err(crate::error::Error::Diagnostic(diagnostic))
+}
+
+pub fn unreachable_match_case<T>(
+    span: impl Into<Range<usize>>,
+    wildcard_span: impl Into<Range<usize>>,
+) -> Result<T> {
+    let label = Label {
+        message: "So this is unreachable".into(),
+        range: span.into(),
+    };
+    let wildcard_label = Label {
+        message: "There is already a wildcard pattern here".into(),
+        range: wildcard_span.into(),
+    };
+
+    let diagnostic = Diagnostic::error(
+        "Unreachable Match Pattern".into(),
+        vec![label, wildcard_label],
+    );
+    Err(crate::error::Error::Diagnostic(diagnostic))
+}
+
+pub fn invalid_effect_reference<T>(span: impl Into<Range<usize>>, name: impl Display) -> Result<T> {
+    let label = Label {
+        message: format!("'{}' is an effect, but is being referenced as type", name),
+        range: span.into(),
+    };
+    let diagnostic = Diagnostic::error("Invalid Effect Reference".into(), vec![label]);
+    Err(crate::error::Error::Diagnostic(diagnostic))
+}
+
+pub fn invalid_await<T>(span: impl Into<Range<usize>>) -> Result<T> {
+    let label = Label {
+        message: "You can only use 'await' in an async function".into(),
+        range: span.into(),
+    };
+    let diagnostic = Diagnostic::error("Invalid Await".into(), vec![label]);
+    Err(crate::error::Error::Diagnostic(diagnostic))
+}
 
 /// Report an empty type parameter list
 pub fn empty_type_parameters<T>(span: impl Into<Range<usize>>) -> Result<T> {

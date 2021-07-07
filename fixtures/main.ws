@@ -1,8 +1,11 @@
-enum Result<T, E> {
-	Ok(T)
-	Err(E)
-}
+pub effect io
 
-fn main {
-   let ok = Result.Ok("Hello").Bar()
-}
+fn print : void + io {}
+
+const ms_in_second = (1.001)..(1.100)
+
+async fn foo() {}
+
+async fn main {
+  let result = await foo("Hello")
+} 

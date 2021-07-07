@@ -62,7 +62,6 @@ impl<'s> Lexer<'s> {
     }
 
     pub fn next_token(&mut self) -> Result<Token> {
-        debug!("next token");
         use TokenKind::*;
         // Read from the lookahead if its populated.
         if let Some(token) = self.lookahead.pop_front() {
@@ -76,6 +75,7 @@ impl<'s> Lexer<'s> {
             Some((_, '#')) => self.comment(),
             Some((_, '"')) => self.string(),
             Some((_, '.')) => self.dot(),
+            Some((_, '&')) => self.and(),
             Some((_, ',')) => self.punc(Comma),
             Some((_, '=')) => self.equals(),
             Some((_, '(')) => self.punc(LParen),
@@ -92,6 +92,7 @@ impl<'s> Lexer<'s> {
             Some((_, '<')) => self.punc(LessThan),
             Some((_, '>')) => self.punc(GreaterThan),
             Some((_, '|')) => self.punc(Pipe),
+            Some((_, '_')) => self.punc(Underscore),
             Some((_, '\n')) => self.punc(Newline),
             None => Ok(Token {
                 span: Span::new(0, 0),
@@ -148,6 +149,12 @@ impl<'s> Lexer<'s> {
                 let span = Span::new(start as u32, end as u32);
                 (span, TokenKind::Arrow)
             }
+            // Support == as well
+            Some((_, '=')) => {
+                let (end, _) = self.chars.next().unwrap();
+                let span = Span::new(start as u32, end as u32);
+                (span, TokenKind::DoubleEquals)
+            }
             _ => {
                 let end = start;
                 (Span::new(start as u32, end as u32), TokenKind::Equals)
@@ -175,14 +182,37 @@ impl<'s> Lexer<'s> {
         Ok(token)
     }
 
+    fn and(&mut self) -> Result<Token> {
+        let (start, _) = self.chars.next().unwrap();
+        let (span, kind) = match self.chars.peek() {
+            Some((_, '&')) => {
+                let (end, _) = self.chars.next().unwrap();
+                (Span::new(start as u32, end as u32), TokenKind::BinAnd)
+            }
+            _ => {
+                let end = start;
+                (Span::new(start as u32, end as u32), TokenKind::And)
+            }
+        };
+        let token = Token::new(kind, span);
+        Ok(token)
+    }
+
     fn number(&mut self) -> Result<Token> {
         let (start, _) = self.chars.next().unwrap();
         let mut end = start;
+        let mut is_float = false;
         loop {
-            debug!("number loop");
             match self.chars.peek() {
                 Some((i, ch)) => {
                     if ch.is_digit(10) || ch == &'_' {
+                        end = *i;
+                    } else if ch == &'.' {
+                        if is_float {
+                            // Check if the next char is a 
+                            return multiple_decimal_in_number(Span::new(start as u32, end as u32));
+                        }
+                        is_float = true;
                         end = *i;
                     } else {
                         break;
@@ -237,6 +267,10 @@ impl<'s> Lexer<'s> {
                 "pub" => Pub,
                 "return" => Return,
                 "type" => Type,
+                "and" => And,
+                "or" => Or,
+                "match" => Match,
+                "effect" => Effect,
                 _ => {
                     let symbol = Symbol::intern(word);
                     Identifier(symbol)

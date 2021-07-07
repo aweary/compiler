@@ -3,10 +3,11 @@ use common::scope_map::Referant;
 use common::symbol::Symbol;
 
 use std::sync::Arc;
-use types::Type;
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct UniqueName(u32);
+
+type Type = types::Type<Arc<Struct>, Arc<EffectDef>>;
 
 impl From<u32> for UniqueName {
     fn from(id: u32) -> Self {
@@ -40,6 +41,7 @@ pub enum DefinitionKind {
     Struct(Arc<Struct>),
     Const(Arc<Const>),
     Type(Arc<TypeDef>),
+    Effect(Arc<EffectDef>),
     Enum(Arc<Enum>),
     Function(Arc<Function>),
     Component(Component),
@@ -110,6 +112,12 @@ pub struct TypeDef {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EffectDef {
+    pub span: Span,
+    pub name: Identifier,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Struct {
     pub name: Identifier,
     pub type_parameters: Option<TypeParameters>,
@@ -145,19 +153,26 @@ pub struct Variant {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Binding {
     Let(Arc<Let>),
+    State(Arc<State>),
     Enum(Arc<Enum>),
     Function(Arc<Function>),
     Parameter(Arc<Parameter>),
     Const(Arc<Const>),
+    Iterator(Identifier),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TypeBinding {
     Struct(Arc<Struct>),
+    Effect(Arc<EffectDef>),
 }
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EffectBinding(pub Arc<EffectDef>);
 
 impl Referant for Binding {}
 impl Referant for TypeBinding {}
+impl Referant for EffectBinding {}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ExpressionKind {
@@ -190,12 +205,34 @@ pub enum ExpressionKind {
         start: Box<Expression>,
         end: Box<Expression>,
     },
+    Assignment {
+        left: Box<Expression>,
+        right: Box<Expression>,
+    },
+    Match {
+        value: Box<Expression>,
+        cases: Vec<MatchCase>,
+    },
+    Block(Block),
+    Await(Box<Expression>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MatchCase {
+    pub pattern: MatchPattern,
+    pub body: Box<Expression>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MatchPattern {
+    Wildcard,
+    Expression(Box<Expression>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BinOp {
     Equals,
-    DblEquals,
+    DoubleEquals,
     Add,
     Sub,
     Sum,
@@ -208,7 +245,7 @@ pub enum BinOp {
     LessThan,
     Pipeline,
     BinOr,
-    BinAdd,
+    BinAnd,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -223,10 +260,12 @@ pub struct Expression {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StatementKind {
     Let(Arc<Let>),
+    State(Arc<State>),
     For(For),
     While(While),
     If(If),
     Return(Expression),
+    Expression(Expression),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -253,6 +292,13 @@ pub struct Let {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct State {
+    pub name: Identifier,
+    pub unique_name: UniqueName,
+    pub value: Expression,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Statement {
     pub span: Span,
     pub kind: StatementKind,
@@ -266,6 +312,7 @@ pub struct Block {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Function {
     pub name: Identifier,
+    pub is_async: bool,
     pub type_parameters: Option<TypeParameters>,
     pub parameters: Option<Vec<Arc<Parameter>>>,
     pub return_type: Option<TypeExpression>,
@@ -276,6 +323,7 @@ pub struct Function {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Component {
     pub name: Identifier,
+    pub is_async: bool,
     pub type_parameters: Option<TypeParameters>,
     pub parameters: Option<Vec<Arc<Parameter>>>,
     pub return_type: Option<TypeExpression>,

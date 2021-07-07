@@ -54,8 +54,10 @@ pub struct ParserImpl<'s> {
     lexer: Lexer<'s>,
     span: Span,
     is_newline_significant: bool,
+    is_async_context: bool,
     scope_map: ScopeMap<Symbol, Binding>,
     type_scope_map: ScopeMap<Symbol, TypeBinding>,
+    allow_effect_reference: bool,
 }
 
 impl<'s> ParserImpl<'s> {
@@ -69,8 +71,10 @@ impl<'s> ParserImpl<'s> {
             lexer,
             span,
             is_newline_significant: false,
+            is_async_context: false,
             scope_map,
             type_scope_map,
+            allow_effect_reference: false,
         }
     }
 
@@ -145,12 +149,10 @@ impl<'s> ParserImpl<'s> {
     /// Parses all imports at the top of a module. We currently require
     /// that all imports are grouped together at the top of the module.
     fn imports(&mut self) -> Result<Vec<Import>> {
-        debug!("imports");
         let mut imports = vec![];
         loop {
             match self.peek()?.kind {
                 TokenKind::Import => {
-                    debug!("found an import");
                     let import = self.import()?;
                     imports.push(import)
                 }
@@ -162,7 +164,6 @@ impl<'s> ParserImpl<'s> {
 
     /// Parse a single import statement
     fn import(&mut self) -> Result<Import> {
-        debug!("import");
         self.expect(TokenKind::Import)?;
         let mut parts = vec![];
         loop {
@@ -231,17 +232,33 @@ impl<'s> ParserImpl<'s> {
         }
 
         let kind = match self.peek()?.kind {
+            TokenKind::Async => {
+                self.eat(TokenKind::Async)?;
+                match self.peek()?.kind {
+                    TokenKind::Fn => {
+                        let function = self.function(true)?;
+                        DefinitionKind::Function(function)
+                        // ...
+                    }
+                    TokenKind::Component => {
+                        let component = self.component(true)?;
+                        DefinitionKind::Component(component)
+                    }
+                    _ => {
+                        panic!("Invalid async definition")
+                    }
+                }
+            }
             TokenKind::Fn => {
-                let function = self.function()?;
+                let function = self.function(false)?;
                 DefinitionKind::Function(function)
             }
             TokenKind::Component => {
-                let component = self.component()?;
+                let component = self.component(false)?;
                 DefinitionKind::Component(component)
             }
             TokenKind::Enum => {
                 let enum_ = self.enum_()?;
-                debug!("enum: {:#?}", enum_);
                 DefinitionKind::Enum(enum_)
             }
             TokenKind::Struct => {
@@ -256,7 +273,10 @@ impl<'s> ParserImpl<'s> {
                 let type_def = self.type_def()?;
                 DefinitionKind::Type(type_def)
             }
-            // TokenKind::EOF => return Ok(definitions),
+            TokenKind::Effect => {
+                let effect = self.effect_def()?;
+                DefinitionKind::Effect(effect)
+            }
             _ => {
                 use diagnostics::error::unexpected_token_error_with_multiple_options;
                 let token = self.next()?;
@@ -377,9 +397,29 @@ impl<'s> ParserImpl<'s> {
         let name = self.identifier()?;
         let span = self.span;
         // How can we represent user types at this point? We don't want the types crate to depend on the AST
-        let _type = self.type_scope_map.resolve(&name.symbol).map(|binding| {
-            println!("{:#?}", binding);
-        });
+        let type_ = match self.type_scope_map.resolve(&name.symbol) {
+            None => match name.symbol.to_string().as_str() {
+                "bool" => Type::Boolean,
+                "number" => Type::Number,
+                "string" => Type::String,
+                "void" => Type::Unit,
+                _ => {
+                    use diagnostics::error::unknown_type;
+                    return unknown_type(span, &name.symbol);
+                }
+            },
+            Some((binding, _)) => match binding {
+                TypeBinding::Struct(struct_) => Type::Struct(struct_.clone()),
+                TypeBinding::Effect(effect) => {
+                    if self.allow_effect_reference {
+                        Type::Effect(effect.clone())
+                    } else {
+                        use diagnostics::error::invalid_effect_reference;
+                        return invalid_effect_reference(span, effect.name.symbol);
+                    }
+                }
+            },
+        };
         let arguments = if self.eat(TokenKind::LessThan)? {
             let mut arguments = vec![];
             loop {
@@ -401,7 +441,7 @@ impl<'s> ParserImpl<'s> {
         let type_ = TypeExpression {
             kind,
             span,
-            type_: None,
+            type_: Some(type_),
         };
         Ok(type_)
     }
@@ -451,37 +491,128 @@ impl<'s> ParserImpl<'s> {
     }
 
     fn prefix_expression(&mut self) -> Result<Expression> {
-        let token = self.next()?;
-        match token.kind {
-            TokenKind::Number(symbol) => Ok(Expression {
-                kind: ExpressionKind::Number {
-                    raw: symbol,
-                    value: None,
-                },
-                span: token.span,
-                type_: Some(Type::Number),
-            }),
-            TokenKind::String(symbol) => Ok(Expression {
-                kind: ExpressionKind::String { raw: symbol },
-                span: token.span,
-                type_: Some(Type::String),
-            }),
-            TokenKind::True | TokenKind::False => Ok(Expression {
-                kind: ExpressionKind::Boolean(token.kind == TokenKind::True),
-                span: token.span,
-                type_: Some(Type::Boolean),
-            }),
-            TokenKind::Identifier(symbol) => match self.scope_map.resolve(&symbol) {
-                Some((binding, _unique_reference)) => Ok(Expression {
-                    kind: ExpressionKind::Reference(binding.clone()),
+        match self.peek()?.kind {
+            TokenKind::Number(symbol) => {
+                let token = self.next()?;
+                Ok(Expression {
+                    kind: ExpressionKind::Number {
+                        raw: symbol,
+                        value: None,
+                    },
                     span: token.span,
-                    type_: None,
-                }),
-                None => diagnostics::error::unknown_reference_error(token.span, symbol),
-            },
+                    type_: Some(Type::Number),
+                })
+            }
+            TokenKind::String(symbol) => {
+                let token = self.next()?;
+                Ok(Expression {
+                    kind: ExpressionKind::String { raw: symbol },
+                    span: token.span,
+                    type_: Some(Type::String),
+                })
+            }
+            TokenKind::True | TokenKind::False => {
+                let token = self.next()?;
+                Ok(Expression {
+                    kind: ExpressionKind::Boolean(token.kind == TokenKind::True),
+                    span: token.span,
+                    type_: Some(Type::Boolean),
+                })
+            }
+            TokenKind::Identifier(symbol) => {
+                let token = self.next()?;
+                match self.scope_map.resolve(&symbol) {
+                    Some((binding, _unique_reference)) => Ok(Expression {
+                        kind: ExpressionKind::Reference(binding.clone()),
+                        span: token.span,
+                        type_: None,
+                    }),
+                    None => diagnostics::error::unknown_reference_error(token.span, symbol),
+                }
+            }
             TokenKind::LBracket => self.array_expression(),
-            _ => panic!("Unknown token for expression, {:#?}", token.kind),
+            TokenKind::LBrace => self.block_expression(),
+            TokenKind::Match => self.match_expression(),
+            TokenKind::LParen => {
+                self.expect(TokenKind::LParen)?;
+                let expression = self.expression(Precedence::None)?;
+                self.expect(TokenKind::RParen)?;
+                Ok(expression)
+            }
+            TokenKind::Await => {
+                self.expect(TokenKind::Await)?;
+                if !self.is_async_context {
+                    use diagnostics::error::invalid_await;
+                    return invalid_await(self.span);
+                }
+                let span = self.span;
+                let expression = self.expression(Precedence::None)?;
+                let span = span.merge(expression.span);
+                let kind = ExpressionKind::Await(expression.into());
+                Ok(Expression {
+                    kind,
+                    span,
+                    type_: None,
+                })
+            }
+            _ => {
+                let token = self.next()?;
+                panic!("Unknown token for expression, {:#?}", token.kind);
+            }
         }
+    }
+
+    fn match_expression(&mut self) -> Result<Expression> {
+        self.expect(TokenKind::Match)?;
+        let span = self.span;
+        let value = self.expression(Precedence::None)?;
+        let cases = self.match_cases()?;
+        let span = self.span.merge(span);
+        Ok(Expression {
+            kind: ExpressionKind::Match {
+                value: value.into(),
+                cases,
+            },
+            span,
+            type_: None,
+        })
+    }
+
+    fn match_cases(&mut self) -> Result<Vec<MatchCase>> {
+        self.expect(TokenKind::LBrace)?;
+        let mut cases = vec![];
+        let mut wildcard_span = None;
+        loop {
+            if let TokenKind::RBrace = self.peek()?.kind {
+                break;
+            }
+            let pattern = match self.peek()?.kind {
+                TokenKind::Underscore => {
+                    self.skip()?;
+                    if let Some(span) = wildcard_span {
+                        use diagnostics::error::duplicate_wildcard_error;
+                        return duplicate_wildcard_error(span, self.span);
+                    }
+                    wildcard_span = Some(self.span);
+                    MatchPattern::Wildcard
+                }
+                _ => {
+                    let expression = self.expression(Precedence::None)?;
+                    // Check if a wildcard has already been used and warn
+                    // about it since further cases will be unreachable.
+                    if let Some(span) = wildcard_span {
+                        use diagnostics::error::unreachable_match_case;
+                        return unreachable_match_case(self.span, span);
+                    }
+                    MatchPattern::Expression(expression.into())
+                }
+            };
+            self.expect(TokenKind::Arrow)?;
+            let body = self.expression(Precedence::None)?.into();
+            cases.push(MatchCase { pattern, body });
+        }
+        self.expect(TokenKind::RBrace)?;
+        Ok(cases)
     }
 
     fn binary_expression(&mut self, left: Expression) -> Result<Expression> {
@@ -592,11 +723,48 @@ impl<'s> ParserImpl<'s> {
     fn infix_expression(&mut self, prefix: Expression) -> Result<Expression> {
         use TokenKind::*;
         match self.peek()?.kind {
-            Plus | Minus | Star | Slash | LessThan | GreaterThan => self.binary_expression(prefix),
+            Plus | Minus | Star | Slash | LessThan | GreaterThan | DoubleEquals | And | BinAnd => {
+                self.binary_expression(prefix)
+            }
+            Equals => self.assignment_expression(prefix),
             LParen => self.call_expression(prefix),
             Dot => self.member_expression(prefix),
             Range => self.range_expression(prefix),
             _ => Ok(prefix),
+        }
+    }
+
+    fn block_expression(&mut self) -> Result<Expression> {
+        let span = self.span;
+        let block = self.block()?;
+        let kind = ExpressionKind::Block(block);
+        Ok(Expression {
+            kind,
+            span,
+            type_: None,
+        })
+    }
+
+    fn assignment_expression(&mut self, left: Expression) -> Result<Expression> {
+        self.expect(TokenKind::Equals)?;
+        match left.kind {
+            ExpressionKind::Reference(_) | ExpressionKind::Member { .. } => {
+                let right = self.expression(Precedence::Assignment)?;
+                let span = left.span.merge(right.span);
+                let kind = ExpressionKind::Assignment {
+                    left: left.into(),
+                    right: right.into(),
+                };
+                Ok(Expression {
+                    kind,
+                    span,
+                    type_: None,
+                })
+            }
+            _ => {
+                use diagnostics::error::illegal_assignment_target;
+                illegal_assignment_target(left.span)
+            }
         }
     }
 
@@ -618,16 +786,14 @@ impl<'s> ParserImpl<'s> {
 
     fn expression(&mut self, precedence: Precedence) -> Result<Expression> {
         let mut expression = self.prefix_expression()?;
-        println!("precedence: {:?}", precedence);
-        println!("peeked precedence: {:?}", self.peek()?.precedence());
         while precedence < self.peek()?.precedence() {
             expression = self.infix_expression(expression)?;
         }
-        println!("{:#?}", expression);
         Ok(expression)
     }
 
     fn array_expression(&mut self) -> Result<Expression> {
+        self.expect(TokenKind::RBracket)?;
         let mut elements = vec![];
         let span = self.span;
         loop {
@@ -677,6 +843,29 @@ impl<'s> ParserImpl<'s> {
         })
     }
 
+    fn state(&mut self) -> Result<Statement> {
+        self.expect(TokenKind::State)?;
+        let name = self.identifier()?;
+        self.expect(TokenKind::Equals)?;
+        let value = self.expression(Precedence::None)?;
+        let symbol = name.symbol;
+        let span = name.span.merge(value.span);
+        // let unique_name = self.scope_map.unique_name();
+        let state = State {
+            name,
+            value,
+            // TODO
+            unique_name: UniqueName::from(0),
+        };
+        let state = Arc::new(state);
+        let binding = Binding::State(state.clone());
+        self.scope_map.define(symbol, binding);
+        Ok(Statement {
+            kind: StatementKind::State(state),
+            span,
+        })
+    }
+
     fn return_(&mut self) -> Result<Statement> {
         self.expect(TokenKind::Return)?;
         let span = self.span;
@@ -691,11 +880,21 @@ impl<'s> ParserImpl<'s> {
     fn statement(&mut self) -> Result<Statement> {
         match self.peek()?.kind {
             TokenKind::Let => self.let_(),
+            TokenKind::State => self.state(),
             TokenKind::Return => self.return_(),
             TokenKind::If => self.if_(),
             TokenKind::For => self.for_(),
-            _ => panic!("Unknown token for statement"),
+            _ => self.expression_statement(),
         }
+    }
+
+    fn expression_statement(&mut self) -> Result<Statement> {
+        let expression = self.expression(Precedence::None)?;
+        let span = expression.span;
+        Ok(Statement {
+            kind: StatementKind::Expression(expression),
+            span,
+        })
     }
 
     // Parse a for-in statement like for x in y { ... }
@@ -703,9 +902,11 @@ impl<'s> ParserImpl<'s> {
         self.expect(TokenKind::For)?;
         let span = self.span;
         let iterator = self.identifier()?;
+        let symbol = iterator.symbol;
+        self.scope_map
+            .define(symbol, Binding::Iterator(iterator.clone()));
         self.expect(TokenKind::In)?;
         let iterable = self.expression(Precedence::None)?;
-        println!("iterable");
         let body = self.block()?;
         let for_ = For {
             iterator,
@@ -722,9 +923,9 @@ impl<'s> ParserImpl<'s> {
     fn if_(&mut self) -> Result<Statement> {
         self.expect(TokenKind::If)?;
         let span = self.span;
-        self.expect(TokenKind::LParen)?;
+        // self.expect(TokenKind::LParen)?;
         let condition = self.expression(Precedence::None)?;
-        self.expect(TokenKind::RParen)?;
+        // self.expect(TokenKind::RParen)?;
         let body = self.block()?;
         let _if = If { body, condition };
         let span = self.span.merge(span);
@@ -753,7 +954,10 @@ impl<'s> ParserImpl<'s> {
         let annotations = if self.eat(TokenKind::Colon)? {
             let type_ = self.type_()?;
             let effect = if self.eat(TokenKind::Plus)? {
+                let allow_effect_reference = self.allow_effect_reference;
+                self.allow_effect_reference = true;
                 let effect_type = self.type_()?;
+                self.allow_effect_reference = allow_effect_reference;
                 let effect = Effect(effect_type);
                 Some(effect)
             } else {
@@ -766,7 +970,9 @@ impl<'s> ParserImpl<'s> {
         Ok(annotations)
     }
 
-    fn function(&mut self) -> Result<Arc<Function>> {
+    fn function(&mut self, is_async: bool) -> Result<Arc<Function>> {
+        let prev_is_async_context = self.is_async_context;
+        self.is_async_context = is_async;
         self.expect(TokenKind::Fn)?;
         self.scope_map.extend();
         let name = self.identifier()?;
@@ -776,8 +982,10 @@ impl<'s> ParserImpl<'s> {
         let (return_type, effect_type) = self.type_and_effect_annotation()?;
         let body = self.block()?;
         self.scope_map.pop();
+        self.is_async_context = prev_is_async_context;
         let function = Function {
             name,
+            is_async,
             type_parameters,
             parameters,
             return_type,
@@ -790,7 +998,9 @@ impl<'s> ParserImpl<'s> {
         Ok(function)
     }
 
-    fn component(&mut self) -> Result<Component> {
+    fn component(&mut self, is_async: bool) -> Result<Component> {
+        let prev_is_async_context = self.is_async_context;
+        self.is_async_context = is_async;
         self.expect(TokenKind::Component)?;
         self.scope_map.extend();
         let name = self.identifier()?;
@@ -799,8 +1009,10 @@ impl<'s> ParserImpl<'s> {
         let (return_type, effect_type) = self.type_and_effect_annotation()?;
         let body = self.block()?;
         self.scope_map.pop();
+        self.is_async_context = prev_is_async_context;
         Ok(Component {
             name,
+            is_async,
             type_parameters,
             parameters,
             return_type,
@@ -906,16 +1118,28 @@ impl<'s> ParserImpl<'s> {
         Ok(type_def)
     }
 
+    fn effect_def(&mut self) -> Result<Arc<EffectDef>> {
+        debug!("effect_def");
+        self.expect(TokenKind::Effect)?;
+        let span = self.span;
+        let name = self.identifier()?;
+        let symbol = name.symbol;
+        debug!("effect_def {:?}", name);
+        let effect_def = Arc::new(EffectDef { name, span });
+        self.type_scope_map
+            .define(symbol, TypeBinding::Effect(effect_def.clone()));
+        Ok(effect_def)
+    }
+
     fn struct_fields(&mut self) -> Result<Vec<StructField>> {
         let mut fields = vec![];
         loop {
-            let name = self.identifier()?;
-            self.expect(TokenKind::Colon)?;
-            let type_ = self.type_()?;
-            let field = StructField { name, type_ };
-            fields.push(field);
             if let TokenKind::Identifier(_) = self.peek()?.kind {
-                continue;
+                let name = self.identifier()?;
+                self.expect(TokenKind::Colon)?;
+                let type_ = self.type_()?;
+                let field = StructField { name, type_ };
+                fields.push(field);
             } else {
                 break;
             }

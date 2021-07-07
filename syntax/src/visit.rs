@@ -3,13 +3,16 @@ use std::sync::Arc;
 use crate::ast::*;
 use diagnostics::result::Result;
 
-/// An AST visitor
 pub trait Visitor: Sized {
     fn visit_module(&mut self, module: &mut Module) -> Result<()> {
         walk_module(self, module)
     }
 
     fn visit_enum(&mut self, _enum: &mut Arc<Enum>) -> Result<()> {
+        Ok(())
+    }
+    
+    fn visit_effect(&mut self, _enum: &mut Arc<EffectDef>) -> Result<()> {
         Ok(())
     }
 
@@ -47,6 +50,9 @@ pub fn walk_module(visitor: &mut impl Visitor, module: &mut Module) -> Result<()
         match &mut definition.kind {
             DefinitionKind::Enum(enum_) => {
                 visitor.visit_enum(enum_)?;
+            }
+            DefinitionKind::Effect(effect_) => {
+                visitor.visit_effect(effect_)?;
             }
             DefinitionKind::Function(function) => {
                 visitor.visit_function(function)?;

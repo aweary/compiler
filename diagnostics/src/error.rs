@@ -2,6 +2,8 @@
 //! reporting different kinds of errors.
 use std::io;
 
+use codespan_reporting::diagnostic::LabelStyle;
+
 use crate::result::Result;
 use std::fmt::Display;
 use std::ops::Range;
@@ -16,6 +18,7 @@ const UNKNOWN_REFERENCE: &str = "Unknown Reference";
 pub struct Label {
     message: String,
     range: Range<usize>,
+    style: LabelStyle,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -67,7 +70,7 @@ pub fn report_diagnostic_to_term(diagnostic: Diagnostic, file_name: &str, file_s
                 // the start of the range. We shift the end of the range out by one
                 // to account for this.
                 let range = label.range.start..label.range.end + 1;
-                CodespanLabel::primary(id, range).with_message(label.message.clone())
+                CodespanLabel::new(label.style, id, range).with_message(label.message.clone())
             })
             .collect();
         let mut csp_diagnostic = CodespanDiagnostic::error()
@@ -93,6 +96,7 @@ pub fn unexpected_token_error<T>(
     let label = Label {
         message: format!("Expected '{}' but found '{}'", expected, found),
         range: span.into(),
+        style: LabelStyle::Primary,
     };
 
     let diagnostic = Diagnostic::error(UNEXPECTED_TOKEN_ERROR_TITLE.into(), vec![label]);
@@ -104,6 +108,7 @@ pub fn illegal_function_callee<T>(span: impl Into<Range<usize>>) -> Result<T> {
     let label = Label {
         message: format!("You can't call this as a function, dumb bitch"),
         range: span.into(),
+        style: LabelStyle::Primary,
     };
     let diagnostic = Diagnostic::error(ILLEGAL_FUNCTION_CALLEE_TITLE.into(), vec![label]);
     Err(crate::error::Error::Diagnostic(diagnostic))
@@ -114,6 +119,7 @@ pub fn unknown_reference_error<T>(span: impl Into<Range<usize>>, name: impl Disp
     let label = Label {
         message: format!("Cannot resolve '{}'", name),
         range: span.into(),
+        style: LabelStyle::Primary,
     };
 
     let diagnostic = Diagnostic::error(UNKNOWN_REFERENCE.into(), vec![label]);
@@ -140,6 +146,7 @@ pub fn unexpected_token_error_with_multiple_options<T>(
     let label = Label {
         message,
         range: span.into(),
+        style: LabelStyle::Primary,
     };
     Err(crate::error::Error::Diagnostic(
         Diagnostic::error(UNEXPECTED_TOKEN_ERROR_TITLE.into(), vec![label])
@@ -152,6 +159,7 @@ pub fn expected_identifier<T>(span: impl Into<Range<usize>>, found: impl Display
     let label = Label {
         message: format!("Expected an identifier but found '{}'", found),
         range: span.into(),
+        style: LabelStyle::Primary,
     };
     let diagnostic = Diagnostic::error(UNEXPECTED_TOKEN_ERROR_TITLE.into(), vec![label]);
     Err(crate::error::Error::Diagnostic(diagnostic))
@@ -162,6 +170,7 @@ pub fn invalid_character<T>(span: impl Into<Range<usize>>) -> Result<T> {
     let label = Label {
         message: "This character isn't recognized".into(),
         range: span.into(),
+        style: LabelStyle::Primary,
     };
     let diagnostic = Diagnostic::error(UNEXPECTED_CHARACTER_ERROR_TITLE.into(), vec![label]);
     Err(crate::error::Error::Diagnostic(diagnostic))
@@ -171,6 +180,7 @@ pub fn multiple_decimal_in_number<T>(span: impl Into<Range<usize>>) -> Result<T>
     let label = Label {
         message: "You can't have multiple decimal points in a number".into(),
         range: span.into(),
+        style: LabelStyle::Primary,
     };
     let diagnostic = Diagnostic::error(UNEXPECTED_TOKEN_ERROR_TITLE.into(), vec![label]);
     Err(crate::error::Error::Diagnostic(diagnostic))
@@ -180,6 +190,7 @@ pub fn illegal_assignment_target<T>(span: impl Into<Range<usize>>) -> Result<T> 
     let label = Label {
         message: "You can't assign to this".into(),
         range: span.into(),
+        style: LabelStyle::Primary,
     };
     let diagnostic = Diagnostic::error("Invalid Assignment Target".into(), vec![label]);
     Err(crate::error::Error::Diagnostic(diagnostic))
@@ -189,6 +200,7 @@ pub fn unknown_type<T>(span: impl Into<Range<usize>>, name: impl Display) -> Res
     let label = Label {
         message: format!("Cannot resolve '{}'", name),
         range: span.into(),
+        style: LabelStyle::Primary,
     };
     let diagnostic = Diagnostic::error("Unknown Type".into(), vec![label]);
     Err(crate::error::Error::Diagnostic(diagnostic))
@@ -201,10 +213,12 @@ pub fn duplicate_wildcard_error<T>(
     let primary = Label {
         message: "You can't use a wildcard twice".into(),
         range: second.into(),
+        style: LabelStyle::Primary,
     };
     let secondary = Label {
         message: "A wildcard pattern is already used here".into(),
         range: first.into(),
+        style: LabelStyle::Primary,
     };
     let diagnostic = Diagnostic::error("Duplicate Wildcard".into(), vec![primary, secondary]);
     Err(crate::error::Error::Diagnostic(diagnostic))
@@ -217,10 +231,12 @@ pub fn unreachable_match_case<T>(
     let label = Label {
         message: "So this is unreachable".into(),
         range: span.into(),
+        style: LabelStyle::Primary,
     };
     let wildcard_label = Label {
         message: "There is already a wildcard pattern here".into(),
         range: wildcard_span.into(),
+        style: LabelStyle::Primary,
     };
 
     let diagnostic = Diagnostic::error(
@@ -234,6 +250,7 @@ pub fn invalid_effect_reference<T>(span: impl Into<Range<usize>>, name: impl Dis
     let label = Label {
         message: format!("'{}' is an effect, but is being referenced as type", name),
         range: span.into(),
+        style: LabelStyle::Primary,
     };
     let diagnostic = Diagnostic::error("Invalid Effect Reference".into(), vec![label]);
     Err(crate::error::Error::Diagnostic(diagnostic))
@@ -243,6 +260,7 @@ pub fn invalid_await<T>(span: impl Into<Range<usize>>) -> Result<T> {
     let label = Label {
         message: "You can only use 'await' in an async function".into(),
         range: span.into(),
+        style: LabelStyle::Primary,
     };
     let diagnostic = Diagnostic::error("Invalid Await".into(), vec![label]);
     Err(crate::error::Error::Diagnostic(diagnostic))
@@ -253,6 +271,7 @@ pub fn empty_type_parameters<T>(span: impl Into<Range<usize>>) -> Result<T> {
     let label = Label {
         message: "".into(),
         range: span.into(),
+        style: LabelStyle::Primary,
     };
     Err(Error::Diagnostic(Diagnostic::error(
         EMPTY_TYPE_PARAMETERS.into(),
@@ -264,10 +283,51 @@ pub fn dot_after_import_list<T>(span: impl Into<Range<usize>>) -> Result<T> {
     let label = Label {
         message: "".into(),
         range: span.into(),
+        style: LabelStyle::Primary,
     };
     Err(Error::Diagnostic(Diagnostic::error(
         "Cannot use identifier imports after lists".into(),
         vec![label],
+    )))
+}
+
+pub fn positional_argument_after_named<T>(
+    span: impl Into<Range<usize>>,
+    last_arg_span: impl Into<Range<usize>>,
+) -> Result<T> {
+    let label = Label {
+        message: "this is using a positional argument".into(),
+        range: span.into(),
+        style: LabelStyle::Primary,
+    };
+    let arg_span = Label {
+        message: "a named argument was already used".into(),
+        range: last_arg_span.into(),
+        style: LabelStyle::Secondary,
+    };
+    Err(Error::Diagnostic(Diagnostic::error(
+        "Positional arguments cannot be mixed with named arguments".into(),
+        vec![label, arg_span],
+    )))
+}
+
+pub fn named_argument_after_positional<T>(
+    span: impl Into<Range<usize>>,
+    last_arg_span: impl Into<Range<usize>>,
+) -> Result<T> {
+    let label = Label {
+        message: "this is using a named argument".into(),
+        range: span.into(),
+        style: LabelStyle::Primary,
+    };
+    let arg_span = Label {
+        message: "a positional argument was already used".into(),
+        range: last_arg_span.into(),
+        style: LabelStyle::Secondary,
+    };
+    Err(Error::Diagnostic(Diagnostic::error(
+        "Named arguments cannot be mixed with positional arguments".into(),
+        vec![label, arg_span],
     )))
 }
 

@@ -1,11 +1,9 @@
-pub effect io
+fn View(align: string) {}
+fn Stack() {}
+fn Button(label: string) {}
 
-fn print : void + io {}
-
-const ms_in_second = (1.001)..(1.100)
-
-async fn foo() {}
-
-async fn main {
-  let result = await foo("Hello")
-} 
+const body = View(align: "top") {
+  Stack {
+    Button("Hello")
+  }
+}

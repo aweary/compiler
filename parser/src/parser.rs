@@ -44,6 +44,7 @@ fn parse(db: &dyn Parser, path: PathBuf) -> Result<Module> {
     let source = db.file_text(path);
     let parser = ParserImpl::new(&source);
     let mut module = parser.parse_module()?;
+    debug!("{:#?}", module);
     Resolver::default().visit_module(&mut module)?;
     Ok(module)
 }
@@ -490,6 +491,21 @@ impl<'s> ParserImpl<'s> {
         }
     }
 
+    fn parse_expression_from_identifier(
+        &mut self,
+        symbol: Symbol,
+        span: Span,
+    ) -> Result<Expression> {
+        match self.scope_map.resolve(&symbol) {
+            Some((binding, _unique_reference)) => Ok(Expression {
+                kind: ExpressionKind::Reference(binding.clone()),
+                span: span,
+                type_: None,
+            }),
+            None => diagnostics::error::unknown_reference_error(span, symbol),
+        }
+    }
+
     fn prefix_expression(&mut self) -> Result<Expression> {
         match self.peek()?.kind {
             TokenKind::Number(symbol) => {
@@ -521,14 +537,7 @@ impl<'s> ParserImpl<'s> {
             }
             TokenKind::Identifier(symbol) => {
                 let token = self.next()?;
-                match self.scope_map.resolve(&symbol) {
-                    Some((binding, _unique_reference)) => Ok(Expression {
-                        kind: ExpressionKind::Reference(binding.clone()),
-                        span: token.span,
-                        type_: None,
-                    }),
-                    None => diagnostics::error::unknown_reference_error(token.span, symbol),
-                }
+                self.parse_expression_from_identifier(symbol, token.span)
             }
             TokenKind::LBracket => self.array_expression(),
             TokenKind::LBrace => self.block_expression(),
@@ -673,23 +682,94 @@ impl<'s> ParserImpl<'s> {
         }
     }
 
-    fn arguments(&mut self) -> Result<Vec<Expression>> {
+    fn arguments(&mut self) -> Result<Vec<Argument>> {
+        debug!("Arguments");
+        // Arguments can be positional like foo(bar) or named
+        // like foo(bar: baz).
+        #[derive(Debug, PartialEq, Eq)]
+        enum CallFormat {
+            Unknown,
+            Named,
+            Positional,
+        };
         let mut arguments = vec![];
-        loop {
-            match self.peek()?.kind {
-                // End of argument list
-                TokenKind::RParen => break,
-                _ => {
-                    let argument = self.expression(Precedence::None)?;
-                    arguments.push(argument);
-                    if self.eat(TokenKind::Comma)? {
-                        continue;
-                    } else {
-                        break;
-                    }
-                }
-            }
+        let mut call_format = CallFormat::Unknown;
+
+        if self.eat(TokenKind::RParen)? {
+            return Ok(arguments);
         }
+
+        loop {
+            // End of arguments
+            if let TokenKind::RParen = self.peek()?.kind {
+                debug!("Arguments list empty, exiting loop");
+                break;
+            }
+
+            // TODO can't parse as expression because we do name resolution here
+            if let TokenKind::Identifier(_) = self.peek()?.kind {
+                let name = self.identifier()?;
+                if self.eat(TokenKind::Colon)? {
+                    debug!("named argument");
+                    // Named argument
+                    if call_format == CallFormat::Positional {
+                        use diagnostics::error::named_argument_after_positional;
+                        // Parse the next expression to include it in the error reporting
+                        let expr = self.expression(Precedence::None)?;
+                        let span = name.span.merge(expr.span);
+                        return named_argument_after_positional(
+                            span,
+                            arguments.last().unwrap().span,
+                        );
+                    }
+                    call_format = CallFormat::Named;
+                    let value = self.expression(Precedence::None)?;
+                    let span = name.span.merge(self.span);
+                    let argument = Argument {
+                        span,
+                        name: Some(name),
+                        value,
+                    };
+                    arguments.push(argument);
+                } else {
+                    // Positional argument
+                    let expr = self.parse_expression_from_identifier(name.symbol, name.span)?;
+                    if call_format == CallFormat::Named {
+                        use diagnostics::error::positional_argument_after_named;
+                        return positional_argument_after_named(
+                            expr.span,
+                            arguments.last().unwrap().span,
+                        );
+                    }
+                    call_format = CallFormat::Positional;
+                    let expr = self.parse_expression_from_identifier(name.symbol, name.span)?;
+                    let argument = Argument {
+                        span: expr.span,
+                        name: None,
+                        value: expr,
+                    };
+                    arguments.push(argument);
+                }
+            } else {
+                let expr = self.expression(Precedence::None)?;
+                if call_format == CallFormat::Named {
+                    use diagnostics::error::positional_argument_after_named;
+                    return positional_argument_after_named(
+                        expr.span,
+                        arguments.last().unwrap().span,
+                    );
+                }
+                call_format = CallFormat::Positional;
+                let argument = Argument {
+                    span: expr.span,
+                    name: None,
+                    value: expr,
+                };
+                arguments.push(argument);
+            }
+            self.eat(TokenKind::Comma)?;
+        }
+        self.expect(TokenKind::RParen)?;
         Ok(arguments)
     }
 
@@ -704,8 +784,6 @@ impl<'s> ParserImpl<'s> {
                     callee: left.into(),
                     arguments,
                 };
-                // TODO arguments
-                self.expect(TokenKind::RParen)?;
                 let span = self.span.merge(span);
                 Ok(Expression {
                     kind,
@@ -998,19 +1076,20 @@ impl<'s> ParserImpl<'s> {
         Ok(function)
     }
 
-    fn component(&mut self, is_async: bool) -> Result<Component> {
+    fn component(&mut self, is_async: bool) -> Result<Arc<Component>> {
         let prev_is_async_context = self.is_async_context;
         self.is_async_context = is_async;
         self.expect(TokenKind::Component)?;
         self.scope_map.extend();
         let name = self.identifier()?;
+        let symbol = name.symbol;
         let type_parameters = self.type_parameters()?;
         let parameters = self.parameters()?;
         let (return_type, effect_type) = self.type_and_effect_annotation()?;
         let body = self.block()?;
         self.scope_map.pop();
         self.is_async_context = prev_is_async_context;
-        Ok(Component {
+        let component = Component {
             name,
             is_async,
             type_parameters,
@@ -1018,7 +1097,11 @@ impl<'s> ParserImpl<'s> {
             return_type,
             effect_type,
             body,
-        })
+        };
+        let component = Arc::new(component);
+        self.scope_map
+            .define(symbol, Binding::Component(component.clone()));
+        Ok(component)
     }
 
     fn enum_variant(&mut self) -> Result<Variant> {

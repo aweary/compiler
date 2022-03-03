@@ -44,7 +44,7 @@ pub enum DefinitionKind {
     Effect(Arc<EffectDef>),
     Enum(Arc<Enum>),
     Function(Arc<Function>),
-    Component(Component),
+    Component(Arc<Component>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -156,6 +156,7 @@ pub enum Binding {
     State(Arc<State>),
     Enum(Arc<Enum>),
     Function(Arc<Function>),
+    Component(Arc<Component>),
     Parameter(Arc<Parameter>),
     Const(Arc<Const>),
     Iterator(Identifier),
@@ -192,7 +193,7 @@ pub enum ExpressionKind {
     },
     Call {
         callee: Box<Expression>,
-        arguments: Vec<Expression>,
+        arguments: Vec<Argument>,
     },
     Boolean(bool),
     Reference(Binding),
@@ -215,6 +216,13 @@ pub enum ExpressionKind {
     },
     Block(Block),
     Await(Box<Expression>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Argument {
+    pub span: Span,
+    pub name: Option<Identifier>,
+    pub value: Expression,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

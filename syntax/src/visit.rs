@@ -28,7 +28,7 @@ pub trait Visitor: Sized {
         Ok(())
     }
 
-    fn visit_component(&mut self, _component: &mut Component) -> Result<()> {
+    fn visit_component(&mut self, _component: &mut Arc<Component>) -> Result<()> {
         Ok(())
     }
 

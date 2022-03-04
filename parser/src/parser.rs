@@ -53,9 +53,11 @@ fn parse(db: &dyn Parser, path: PathBuf) -> Result<Module> {
 /// and lazily creates and consumes tokens as it parses.
 pub struct ParserImpl<'s> {
     lexer: Lexer<'s>,
+    prev_span: Span,
     span: Span,
     is_newline_significant: bool,
     is_async_context: bool,
+    is_component_context: bool,
     scope_map: ScopeMap<Symbol, Binding>,
     type_scope_map: ScopeMap<Symbol, TypeBinding>,
     allow_effect_reference: bool,
@@ -70,9 +72,11 @@ impl<'s> ParserImpl<'s> {
         let span = Span::new(0, 0);
         Self {
             lexer,
+            prev_span: span,
             span,
             is_newline_significant: false,
             is_async_context: false,
+            is_component_context: false,
             scope_map,
             type_scope_map,
             allow_effect_reference: false,
@@ -102,9 +106,10 @@ impl<'s> ParserImpl<'s> {
     fn expect(&mut self, kind: TokenKind) -> Result<Token> {
         let token = self.next()?;
         let span = self.span;
+        let prev_span = self.prev_span;
         if token != kind {
             use diagnostics::error::unexpected_token_error;
-            unexpected_token_error(span, kind, token.kind)
+            unexpected_token_error(span, prev_span, kind, token.kind)
         } else {
             Ok(token)
         }
@@ -119,6 +124,7 @@ impl<'s> ParserImpl<'s> {
             debug!("skipping newline");
             self.next()
         } else {
+            self.prev_span = self.span;
             self.span = token.span;
             Ok(token)
         }
@@ -188,10 +194,8 @@ impl<'s> ParserImpl<'s> {
                             }
                             _ => break,
                         }
-                        if self.eat(TokenKind::RBrace)? {
-                            break;
-                        }
                     }
+                    self.expect(TokenKind::RBrace)?;
                     if self.eat(TokenKind::Dot)? {
                         let next_token = self.next()?;
                         use diagnostics::error::dot_after_import_list;
@@ -201,7 +205,7 @@ impl<'s> ParserImpl<'s> {
                     parts.push(part);
                     // arly here as collections must occur at the end
                     // of an import path.
-                    return Ok(Import::new(parts));
+                    break;
                 }
                 _ => break,
             }
@@ -210,6 +214,19 @@ impl<'s> ParserImpl<'s> {
             }
         }
         debug!("import parts {:#?}", parts);
+        // Add the imported values to the local scope
+        match parts.last().unwrap() {
+            ImportPart::Module(ident) => {
+                let binding = Binding::Import(ident.span);
+                self.scope_map.define(ident.symbol, binding);
+            }
+            ImportPart::Collection(idents) => {
+                for ident in idents {
+                    let binding = Binding::Import(ident.span);
+                    self.scope_map.define(ident.symbol, binding);
+                }
+            }
+        };
         Ok(Import::new(parts))
     }
 
@@ -321,7 +338,12 @@ impl<'s> ParserImpl<'s> {
                 match self.peek()?.kind {
                     Identifier(_) => {
                         let identifier = self.identifier()?;
-                        identifiers.push(identifier);
+                        let smybol = identifier.symbol;
+                        let type_param = TypeParameter { name: identifier };
+                        let type_param = Arc::new(type_param);
+                        self.type_scope_map
+                            .define(smybol, TypeBinding::TypeParameter(type_param.clone()));
+                        identifiers.push(type_param);
                         self.eat(Comma)?;
                     }
                     _ => break,
@@ -406,7 +428,19 @@ impl<'s> ParserImpl<'s> {
                 "void" => Type::Unit,
                 _ => {
                     use diagnostics::error::unknown_type;
-                    return unknown_type(span, &name.symbol);
+                    use edit_distance::edit_distance;
+                    let symbol_str = format!("{}", name.symbol);
+                    let mut maybe_reference_span: Option<Span> = None;
+                    for scope in self.type_scope_map.scope_iter() {
+                        for (binding_symbol, (binding, _)) in &scope.bindings {
+                            let binding_str = format!("{}", binding_symbol);
+                            let distance = edit_distance(&binding_str, &symbol_str);
+                            if distance <= 3 {
+                                maybe_reference_span = Some(binding.span());
+                            }
+                        }
+                    }
+                    return unknown_type(span, &name.symbol, maybe_reference_span);
                 }
             },
             Some((binding, _)) => match binding {
@@ -419,6 +453,7 @@ impl<'s> ParserImpl<'s> {
                         return invalid_effect_reference(span, effect.name.symbol);
                     }
                 }
+                TypeBinding::TypeParameter(type_param) => Type::Parameter(type_param.clone()),
             },
         };
         let arguments = if self.eat(TokenKind::LessThan)? {
@@ -502,7 +537,26 @@ impl<'s> ParserImpl<'s> {
                 span: span,
                 type_: None,
             }),
-            None => diagnostics::error::unknown_reference_error(span, symbol),
+            None => {
+                // TODO move edit distance check into scope_map
+                use edit_distance::edit_distance;
+                let symbol_str = format!("{}", symbol);
+                let mut maybe_reference_span: Option<Span> = None;
+                for scope in self.scope_map.scope_iter() {
+                    for (binding_symbol, (binding, _)) in &scope.bindings {
+                        let binding_str = format!("{}", binding_symbol);
+                        let distance = edit_distance(&binding_str, &symbol_str);
+                        if distance <= 3 {
+                            maybe_reference_span = Some(binding.span());
+                        }
+                    }
+                }
+                return diagnostics::error::unknown_reference_error(
+                    span,
+                    symbol,
+                    maybe_reference_span,
+                );
+            }
         }
     }
 
@@ -566,7 +620,8 @@ impl<'s> ParserImpl<'s> {
             }
             _ => {
                 let token = self.next()?;
-                panic!("Unknown token for expression, {:#?}", token.kind);
+                use diagnostics::error::unexpected_token_for_expression;
+                return unexpected_token_for_expression(token.span, self.prev_span);
             }
         }
     }
@@ -780,16 +835,31 @@ impl<'s> ParserImpl<'s> {
             // Function call with a reference
             ExpressionKind::Reference(_) | ExpressionKind::Member { .. } => {
                 let arguments = self.arguments()?;
-                let kind = ExpressionKind::Call {
+                let call = Call {
                     callee: left.into(),
                     arguments,
                 };
-                let span = self.span.merge(span);
-                Ok(Expression {
-                    kind,
-                    span,
-                    type_: None,
-                })
+                if let TokenKind::LBrace = self.peek()?.kind {
+                    // A bracket right after a function call is parsed as a view expression
+                    let block = self.block()?;
+                    let view = View {
+                        constructor: call,
+                        body: block,
+                    };
+                    Ok(Expression {
+                        span,
+                        kind: ExpressionKind::View(view.into()),
+                        type_: None,
+                    })
+                } else {
+                    let kind = ExpressionKind::Call(call);
+                    let span = self.span.merge(span);
+                    Ok(Expression {
+                        kind,
+                        span,
+                        type_: None,
+                    })
+                }
             }
             _ => {
                 use diagnostics::error::illegal_function_callee;
@@ -1077,6 +1147,7 @@ impl<'s> ParserImpl<'s> {
     }
 
     fn component(&mut self, is_async: bool) -> Result<Arc<Component>> {
+        self.is_component_context = true;
         let prev_is_async_context = self.is_async_context;
         self.is_async_context = is_async;
         self.expect(TokenKind::Component)?;
@@ -1101,6 +1172,7 @@ impl<'s> ParserImpl<'s> {
         let component = Arc::new(component);
         self.scope_map
             .define(symbol, Binding::Component(component.clone()));
+        self.is_component_context = false;
         Ok(component)
     }
 

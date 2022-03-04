@@ -262,6 +262,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "codegen"
+version = "0.1.0"
+dependencies = [
+ "diagnostics",
+ "syntax",
+]
+
+[[package]]
 name = "codespan-reporting"
 version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -387,6 +395,7 @@ dependencies = [
 name = "db"
 version = "0.1.0"
 dependencies = [
+ "codegen",
  "diagnostics",
  "lexer",
  "log",
@@ -403,6 +412,12 @@ version = "0.1.0"
 dependencies = [
  "codespan-reporting",
 ]
+
+[[package]]
+name = "edit-distance"
+version = "2.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bbbaaaf38131deb9ca518a274a45bfdb8771f139517b073b16c2d3d32ae5037b"
 
 [[package]]
 name = "either"
@@ -973,6 +988,7 @@ version = "0.1.0"
 dependencies = [
  "common",
  "diagnostics",
+ "edit-distance",
  "id-arena",
  "lexer",
  "log",

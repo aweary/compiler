@@ -19,7 +19,7 @@ struct ScopeId(u32);
 /// only language items that allow for scope creation.
 #[derive(Debug)]
 pub struct Scope<K: Reference, V: Referant> {
-    bindings: HashMap<K, (V, UniqueReference<K>)>,
+    pub bindings: HashMap<K, (V, UniqueReference<K>)>,
 }
 
 impl<K: Reference, V: Referant> Default for Scope<K, V> {
@@ -73,6 +73,10 @@ impl<K: Reference, V: Referant> ScopeMap<K, V> {
 
     pub fn pop(&mut self) {
         self.scopes.pop();
+    }
+
+    pub fn scope_iter(&self) -> impl Iterator<Item = &Scope<K, V>> {
+        self.scopes.iter().rev()
     }
 
     pub fn define(&mut self, identifer: K, binding: V) -> UniqueReference<K> {

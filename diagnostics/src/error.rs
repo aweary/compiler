@@ -90,16 +90,24 @@ pub fn report_diagnostic_to_term(diagnostic: Diagnostic, file_name: &str, file_s
 /// Report an unexpected token error for the parser
 pub fn unexpected_token_error<T>(
     span: impl Into<Range<usize>>,
+    prev_span: impl Into<Range<usize>>,
     expected: impl Display,
     found: impl Display,
 ) -> Result<T> {
     let label = Label {
-        message: format!("Expected '{}' but found '{}'", expected, found),
+        message: format!("but found '{}' instead", found),
         range: span.into(),
+        style: LabelStyle::Secondary,
+    };
+
+    let prev_label = Label {
+        message: format!("Expected '{}' after this", expected),
+        range: prev_span.into(),
         style: LabelStyle::Primary,
     };
 
-    let diagnostic = Diagnostic::error(UNEXPECTED_TOKEN_ERROR_TITLE.into(), vec![label]);
+    let diagnostic =
+        Diagnostic::error(UNEXPECTED_TOKEN_ERROR_TITLE.into(), vec![label, prev_label]);
     Err(crate::error::Error::Diagnostic(diagnostic))
 }
 
@@ -115,14 +123,24 @@ pub fn illegal_function_callee<T>(span: impl Into<Range<usize>>) -> Result<T> {
 }
 
 /// Report an unknown reference error for the parser
-pub fn unknown_reference_error<T>(span: impl Into<Range<usize>>, name: impl Display) -> Result<T> {
-    let label = Label {
+pub fn unknown_reference_error<T>(
+    span: impl Into<Range<usize>>,
+    name: impl Display,
+    maybe_reference_span: Option<impl Into<Range<usize>>>,
+) -> Result<T> {
+    let mut labels = vec![Label {
         message: format!("Cannot resolve '{}'", name),
         range: span.into(),
         style: LabelStyle::Primary,
-    };
-
-    let diagnostic = Diagnostic::error(UNKNOWN_REFERENCE.into(), vec![label]);
+    }];
+    if let Some(reference_span) = maybe_reference_span {
+        labels.push(Label {
+            message: "This has a similar name, did you mean this?".into(),
+            range: reference_span.into(),
+            style: LabelStyle::Secondary,
+        });
+    }
+    let diagnostic = Diagnostic::error(UNKNOWN_REFERENCE.into(), labels);
     Err(crate::error::Error::Diagnostic(diagnostic))
 }
 
@@ -176,6 +194,16 @@ pub fn invalid_character<T>(span: impl Into<Range<usize>>) -> Result<T> {
     Err(crate::error::Error::Diagnostic(diagnostic))
 }
 
+pub fn unterminated_string<T>(span: impl Into<Range<usize>>) -> Result<T> {
+    let label = Label {
+        message: "Unterminated string literal".into(),
+        range: span.into(),
+        style: LabelStyle::Primary,
+    };
+    let diagnostic = Diagnostic::error("Unterminated String Literal".into(), vec![label]);
+    Err(crate::error::Error::Diagnostic(diagnostic))
+}
+
 pub fn multiple_decimal_in_number<T>(span: impl Into<Range<usize>>) -> Result<T> {
     let label = Label {
         message: "You can't have multiple decimal points in a number".into(),
@@ -196,13 +224,24 @@ pub fn illegal_assignment_target<T>(span: impl Into<Range<usize>>) -> Result<T> 
     Err(crate::error::Error::Diagnostic(diagnostic))
 }
 
-pub fn unknown_type<T>(span: impl Into<Range<usize>>, name: impl Display) -> Result<T> {
-    let label = Label {
+pub fn unknown_type<T>(
+    span: impl Into<Range<usize>>,
+    name: impl Display,
+    maybe_reference_span: Option<impl Into<Range<usize>>>,
+) -> Result<T> {
+    let mut labels = vec![Label {
         message: format!("Cannot resolve '{}'", name),
         range: span.into(),
         style: LabelStyle::Primary,
-    };
-    let diagnostic = Diagnostic::error("Unknown Type".into(), vec![label]);
+    }];
+    if let Some(reference_span) = maybe_reference_span {
+        labels.push(Label {
+            message: "This has a similar name, did you mean this?".into(),
+            range: reference_span.into(),
+            style: LabelStyle::Secondary,
+        });
+    }
+    let diagnostic = Diagnostic::error("Unknown Type".into(), labels);
     Err(crate::error::Error::Diagnostic(diagnostic))
 }
 
@@ -328,6 +367,27 @@ pub fn named_argument_after_positional<T>(
     Err(Error::Diagnostic(Diagnostic::error(
         "Named arguments cannot be mixed with positional arguments".into(),
         vec![label, arg_span],
+    )))
+}
+
+pub fn unexpected_token_for_expression<T>(span: impl Into<Range<usize>>,
+    prev_span: impl Into<Range<usize>>,
+) -> Result<T> {
+    let label = Label {
+        message: format!(
+            "Tried to parse an expression starting here, but this token isn't allowed",
+        ),
+        range: span.into(),
+        style: LabelStyle::Primary,
+    };
+    let prev_label = Label {
+        message: "Something might be missing after this?".into(),
+        range: prev_span.into(),
+        style: LabelStyle::Secondary,
+    };
+    Err(Error::Diagnostic(Diagnostic::error(
+        "Unexpected token for expression".into(),
+        vec![label, prev_label],
     )))
 }
 

@@ -2,12 +2,13 @@ use crate::span::Span;
 use common::scope_map::Referant;
 use common::symbol::Symbol;
 
+use std::borrow::Borrow;
 use std::sync::Arc;
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct UniqueName(u32);
 
-type Type = types::Type<Arc<Struct>, Arc<EffectDef>>;
+type Type = types::Type<Arc<Struct>, Arc<EffectDef>, Arc<TypeParameter>>;
 
 impl From<u32> for UniqueName {
     fn from(id: u32) -> Self {
@@ -67,9 +68,14 @@ pub enum ImportPart {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TypeParameter {
+    pub name: Identifier,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TypeParameters {
     pub span: Span,
-    pub identifiers: Vec<Identifier>,
+    pub identifiers: Vec<Arc<TypeParameter>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -160,12 +166,41 @@ pub enum Binding {
     Parameter(Arc<Parameter>),
     Const(Arc<Const>),
     Iterator(Identifier),
+    // TODO make this reference something that can be resolved
+    Import(Span),
+}
+
+impl Binding {
+    pub fn span(&self) -> Span {
+        match self {
+            Binding::Let(let_) => (&**let_).name.span,
+            Binding::State(state) => (&**state).name.span,
+            Binding::Enum(enum_) => (&**enum_).name.span,
+            Binding::Function(func) => (&**func).name.span,
+            Binding::Component(component) => (&**component).name.span,
+            Binding::Parameter(param) => (&**param).name.span,
+            Binding::Const(const_) => (&**const_).name.span,
+            Binding::Iterator(iter) => iter.span,
+            Binding::Import(span) => *span,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TypeBinding {
     Struct(Arc<Struct>),
     Effect(Arc<EffectDef>),
+    TypeParameter(Arc<TypeParameter>),
+}
+
+impl TypeBinding {
+    pub fn span(&self) -> Span {
+        match self {
+            TypeBinding::Struct(struct_) => (&**struct_).name.span,
+            TypeBinding::Effect(effect) => (&**effect).name.span,
+            TypeBinding::TypeParameter(param) => (&**param).name.span,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -191,10 +226,7 @@ pub enum ExpressionKind {
         right: Box<Expression>,
         op: BinOp,
     },
-    Call {
-        callee: Box<Expression>,
-        arguments: Vec<Argument>,
-    },
+    Call(Call),
     Boolean(bool),
     Reference(Binding),
     Array(Vec<Expression>),
@@ -216,6 +248,19 @@ pub enum ExpressionKind {
     },
     Block(Block),
     Await(Box<Expression>),
+    View(Box<View>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Call {
+    pub callee: Box<Expression>,
+    pub arguments: Vec<Argument>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct View {
+    pub constructor: Call,
+    pub body: Block,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

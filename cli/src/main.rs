@@ -116,11 +116,43 @@ async fn watch(options: WatchOptions) {
     for res in rx {
         match res {
             Ok(event) => {
-                let path_str = event.paths.first().unwrap().clone();
-                let source = fs::read_to_string(path_str.clone()).await.unwrap();
-                db.set_file_text(path_str.clone(), source.into());
-                let module_ast = db.parse(entry_point.clone()).unwrap();
-                debug!("ast: {:#?}", module_ast);
+                use notify::event::{EventKind, ModifyKind};
+                if let EventKind::Modify(modified) = event.kind {
+                    if let ModifyKind::Data(_) = modified {
+                        std::process::Command::new("clear").status().unwrap();
+                        // Content of file has changed, recompile
+                        let text = fs::read_to_string(entry_point.clone()).await.unwrap();
+                        db.set_file_text(entry_point.clone(), text.into());
+                        // Compile the entry point module so we can start building up
+                        // the import graph.
+                        let compiled = db.compile(entry_point.clone());
+                        // let ast = {
+                        //     let text = fs::read_to_string(entry_point.clone()).await.unwrap();
+                        //     db.set_file_text(entry_point.clone(), text.into());
+                        //     db.parse(entry_point.clone())
+                        // };
+                        match compiled {
+                            Ok(_ast) => {
+                                use std::io::Write;
+                                use diagnostics::termcolor::{
+                                    Color, ColorChoice, ColorSpec, StandardStream, WriteColor,
+                                };
+                                let mut stdout = StandardStream::stdout(ColorChoice::Always);
+                                stdout.set_color(ColorSpec::new().set_fg(Some(Color::Green))).unwrap();
+                                writeln!(&mut stdout, "Compiled Successfully!").unwrap();
+                            }
+                            Err(error) => {
+                                std::process::Command::new("clear").status().unwrap();
+                                let path_str = entry_point.to_str().unwrap_or("Unknown File");
+                                use diagnostics::error::{report_diagnostic_to_term, Error};
+                                if let Error::Diagnostic(diagnostic) = error {
+                                    let source = db.file_text(entry_point.clone());
+                                    report_diagnostic_to_term(diagnostic, path_str, &source);
+                                }
+                            }
+                        }
+                    }
+                }
             }
             Err(err) => println!("err: {:#?}", err),
         }

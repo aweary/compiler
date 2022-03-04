@@ -1,9 +1,19 @@
-fn View(align: string) {}
-fn Stack() {}
-fn Button(label: string) {}
+import core.{Text, Stack, View}
+import core.dom.{getElementById}
 
-const body = View(align: "top") {
+component HelloWorld {
   Stack {
-    Button("Hello")
+   Text("Hello, world")
+     .size(42)
+   Text("This is great")
+     .size(24)
+   Text("cool cool cool")
+     .color("red")
   }
+  .spacing(4)
+}
+
+fn main<T>() {
+  let target  = "Hello"
+  let view = HelloWorld()
 }

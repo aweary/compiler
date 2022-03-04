@@ -128,9 +128,14 @@ impl<'s> Lexer<'s> {
             if ch == '"' {
                 end = i;
                 break;
-            } else {
-                continue;
+            } else if ch == '\n' {
+                break;
             }
+        }
+        if start == end {
+            use diagnostics::error::unterminated_string;
+            let span = Span::from(start);
+            return unterminated_string(span);
         }
         let span = Span::new(start as u32, end as u32);
         let word = &self.source[start + 1..end];
@@ -209,7 +214,7 @@ impl<'s> Lexer<'s> {
                         end = *i;
                     } else if ch == &'.' {
                         if is_float {
-                            // Check if the next char is a 
+                            // Check if the next char is a
                             return multiple_decimal_in_number(Span::new(start as u32, end as u32));
                         }
                         is_float = true;

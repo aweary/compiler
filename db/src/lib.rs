@@ -4,8 +4,10 @@ use std::path::PathBuf;
 use parser::ParserDatabase;
 use vfs::FileSystemDatabase;
 
-use syntax::ast::{Const};
+use syntax::ast::Const;
 use syntax::visit::Visitor;
+
+use codegen::Codegen;
 
 use log::debug;
 
@@ -25,6 +27,11 @@ impl Visitor for ConstEvaluationStep {
         Ok(())
     }
 }
+
+#[derive(Default)]
+struct ViewCompiler {}
+
+impl Visitor for ViewCompiler {}
 
 // fn evaluate_numeric_expression(expression: &Expression) -> Value {
 //     match &expression.kind {
@@ -70,6 +77,7 @@ fn compile(db: &dyn Compiler, path: PathBuf) -> Result<Vec<usize>> {
     let mut ast = db.parse(path)?;
     // Evaluate constants
     ConstEvaluationStep::default().visit_module(&mut ast)?;
+    Codegen::default().visit_module(&mut ast)?;
     Ok(vec![])
 }
 

@@ -2,7 +2,6 @@ use crate::TokenStream;
 use common::symbol::Symbol;
 use diagnostics::error::{invalid_character, multiple_decimal_in_number};
 use diagnostics::result::Result;
-use log::debug;
 use std::collections::VecDeque;
 use std::iter::{Iterator, Peekable};
 use std::str::CharIndices;
@@ -94,10 +93,14 @@ impl<'s> Lexer<'s> {
             Some((_, '|')) => self.punc(Pipe),
             Some((_, '_')) => self.punc(Underscore),
             Some((_, '\n')) => self.punc(Newline),
-            None => Ok(Token {
-                span: Span::new(0, 0),
-                kind: TokenKind::EOF,
-            }),
+            None => {
+                let index = self.source.len() - 1;
+                let span = Span::new(index as u32, index as u32);
+                Ok(Token {
+                    span,
+                    kind: TokenKind::EOF,
+                })
+            }
             Some((i, _)) => {
                 let span = Span::from(*i);
                 invalid_character(span)

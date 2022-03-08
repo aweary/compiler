@@ -1,35 +1,185 @@
-use common::scope_map::ScopeMap;
-use common::symbol::Symbol;
 use core::panic;
 use diagnostics::result::Result;
 use lexer::Lexer;
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::vec;
-use syntax::{ast::*, Precedence, Span, Token, TokenKind};
+use std::{ops::Deref, path::PathBuf};
+use syntax::{
+    arena::{AstArena, FunctionId, StatementId},
+    ast::*,
+    visit::Visitor,
+    Precedence, Span, Token, TokenKind,
+};
 use vfs::FileSystem;
 
-use syntax::visit::Visitor;
 use types::Type;
 
 use log::debug;
 
-#[derive(Default)]
-pub struct Resolver {}
+use common::control_flow_graph::{BasicBlock, BlockIndex, ControlFlowEdge, ControlFlowGraph};
+use common::scope_map::ScopeMap;
+use common::symbol::Symbol;
 
-impl Visitor for Resolver {
-    fn visit_import(&mut self, import: &mut Import) -> Result<()> {
-        debug!("Visiting import: {:#?}", import);
-        Ok(())
+struct ControlFlowAnalysis<'a> {
+    ast: &'a mut AstArena,
+}
+
+fn construct_cfg_from_if(
+    if_: &If,
+    ast: &AstArena,
+    statement_id: &StatementId,
+) -> ControlFlowGraph<StatementId> {
+    let mut cfg = ControlFlowGraph::<StatementId>::default();
+
+    let true_edge = ControlFlowEdge::ConditionTrue(*statement_id);
+    let false_edge = ControlFlowEdge::ConditionFalse(*statement_id);
+
+    let If {
+        body, alternate, ..
+    } = if_;
+
+    // The block for the `true` branch of the if statement
+    let if_true_cfg = constrct_cfg_from_block(body, ast);
+
+    // Whether the `true` branch of the if statement has an early return
+    let if_true_cfg_has_early_return = if_true_cfg.has_early_return();
+
+    println!("if_true_cfg");
+    if_true_cfg.print();
+
+    let if_true_subgraph_edges_to_enqueue = cfg.consume_subgraph(
+        if_true_cfg,
+        Some(true_edge),
+        cfg.entry_index(),
+        cfg.has_early_return(),
+    );
+
+    if !if_true_cfg_has_early_return {
+        for (block_index, edge) in if_true_subgraph_edges_to_enqueue {
+            cfg.enqueue_edge(block_index, edge);
+        }
     }
 
-    fn visit_enum(&mut self, enum_: &mut Arc<Enum>) -> Result<()> {
-        debug!("Visiting enum: {:#?}", enum_);
-        Ok(())
+    if let Some(ref else_) = alternate {
+        match else_.deref() {
+            Else::Block(else_block) => {
+                let if_false_cfg = constrct_cfg_from_block(else_block, ast);
+                let if_false_cfg_has_early_return = if_false_cfg.has_early_return();
+                let if_false_subgraph_edges_to_enqueue = cfg.consume_subgraph(
+                    if_false_cfg,
+                    Some(false_edge),
+                    cfg.entry_index(),
+                    cfg.has_early_return(),
+                );
+
+                if if_true_cfg_has_early_return && if_false_cfg_has_early_return {
+                    // Both the `true` and `false` branches of the if statement have an early return.
+                    // So we know this block also has an early return
+                    cfg.set_has_early_return(true)
+                }
+
+                if !if_false_cfg_has_early_return {
+                    for (block_index, edge) in if_false_subgraph_edges_to_enqueue {
+                        cfg.enqueue_edge(block_index, edge)
+                    }
+                }
+            }
+            Else::If(_if) => {}
+        }
+    } else {
+        // Assuming we have no `else` chains, the `false` edge should point to the *next* block.
+        cfg.enqueue_edge(cfg.last_index(), false_edge)
     }
 
-    fn visit_struct(&mut self, struct_: &mut Arc<Struct>) -> Result<()> {
-        debug!("Visiting struct: {:#?}", struct_);
+    cfg.flush_edge_queue(cfg.exit_index());
+    cfg
+}
+
+fn constrct_cfg_from_block(block: &Block, ast: &AstArena) -> ControlFlowGraph<StatementId> {
+    let mut cfg = ControlFlowGraph::default();
+    let mut entry_block_index: Option<BlockIndex> = None;
+    let mut basic_block = BasicBlock::<StatementId>::new();
+    for statement_id in &block.statements {
+        let statement = ast.statements.get(*statement_id).unwrap();
+        match &statement.kind {
+                // Non control-flow related statements, add to the currentf basic block
+                StatementKind::Let(_)
+                | StatementKind::State(_)
+                | StatementKind::Expression(_) => {
+                    basic_block.statements.push(*statement_id);
+                }
+                // Control flow
+                StatementKind::Return(_) => {
+                    cfg.set_has_early_return(true);
+                    basic_block.statements.push(*statement_id);
+
+                    let block_index = cfg.add_block(basic_block);
+                    if entry_block_index.is_none() {
+                        entry_block_index = Some(block_index);
+                    }
+
+                    cfg.add_edge_to_exit(block_index,  ControlFlowEdge::Return);
+                    basic_block = BasicBlock::<StatementId>::new();
+                },
+                StatementKind::If(if_) => {
+
+                    let block_index = cfg.add_block(basic_block);
+
+                    let if_cfg = construct_cfg_from_if(if_,  ast, statement_id);
+                    println!("IF_CFG");
+                    if_cfg.print();
+                    let if_cfg_has_early_return = if_cfg.has_early_return();
+
+                    let if_cfg_edges_to_enqueue = cfg.consume_subgraph(if_cfg, None, block_index, cfg.has_early_return());
+
+                    if !if_cfg_has_early_return {
+                        for (block_index, edge) in if_cfg_edges_to_enqueue {
+                            cfg.enqueue_edge(block_index, edge);
+                        }
+                    }
+
+                    
+                    basic_block = BasicBlock::<StatementId>::new();
+                }
+                _ => {
+                    // Do nothing for now...
+                }
+                // StatementKind::While(_) => todo!(),
+                // StatementKind::For(_) => todo!(),
+            }
+    }
+
+    if !basic_block.is_empty() {
+        cfg.add_block(basic_block);
+    }
+
+    let edge_queue_has_last_index = cfg.edge_queue_contains(cfg.last_index());
+
+    cfg.flush_edge_queue(cfg.exit_index());
+
+    // We want to make sure that the last node has a connection to the exit node,
+    // but it's also possible that the edge queue already has an edge to the exit node
+    // from the last node. So to avoid duplicating edges, we check if the last node
+    // is in the edge queue, and avoid explicitly adding that edge if so.
+
+    if !cfg.has_early_return() && !edge_queue_has_last_index {
+        println!(
+            "adding exit edge from {:?} to {:?}",
+            cfg.last_index(),
+            cfg.exit_index()
+        );
+        cfg.add_edge(cfg.last_index(), cfg.exit_index(), ControlFlowEdge::Normal);
+    }
+    cfg
+}
+
+impl<'a> Visitor for ControlFlowAnalysis<'a> {
+    fn visit_function(&mut self, function_id: &mut FunctionId) -> Result<()> {
+        let function = self.ast.functions.get(*function_id).unwrap();
+        let body = function.body.as_ref().unwrap();
+        let cfg = constrct_cfg_from_block(body, &self.ast);
+        println!("FINAL\n\n");
+        cfg.print();
         Ok(())
     }
 }
@@ -42,10 +192,13 @@ pub trait Parser: FileSystem {
 /// Database query for parsing a path.
 fn parse(db: &dyn Parser, path: PathBuf) -> Result<Module> {
     let source = db.file_text(path);
-    let parser = ParserImpl::new(&source);
+    let mut ast_arena = AstArena::default();
+    let parser = ParserImpl::new(&source, &mut ast_arena);
     let mut module = parser.parse_module()?;
-    debug!("{:#?}", module);
-    Resolver::default().visit_module(&mut module)?;
+    let mut cfg_analysis = ControlFlowAnalysis {
+        ast: &mut ast_arena,
+    };
+    cfg_analysis.visit_module(&mut module)?;
     Ok(module)
 }
 
@@ -61,11 +214,13 @@ pub struct ParserImpl<'s> {
     scope_map: ScopeMap<Symbol, Binding>,
     type_scope_map: ScopeMap<Symbol, TypeBinding>,
     allow_effect_reference: bool,
+    ast_arena: &'s mut AstArena,
+    reference_tracker: std::collections::HashSet<FunctionId>,
 }
 
 impl<'s> ParserImpl<'s> {
     /// Create a new instance of `ParseImpl`
-    pub fn new(source: &'s str) -> Self {
+    pub fn new(source: &'s str, ast_arena: &'s mut AstArena) -> Self {
         let lexer = Lexer::new(source);
         let scope_map = ScopeMap::default();
         let type_scope_map = ScopeMap::default();
@@ -80,6 +235,8 @@ impl<'s> ParserImpl<'s> {
             scope_map,
             type_scope_map,
             allow_effect_reference: false,
+            ast_arena,
+            reference_tracker: std::collections::HashSet::new(),
         }
     }
 
@@ -263,7 +420,14 @@ impl<'s> ParserImpl<'s> {
                         DefinitionKind::Component(component)
                     }
                     _ => {
-                        panic!("Invalid async definition")
+                        let token = self.next()?;
+                        use diagnostics::error::unexpected_token_error;
+                        return unexpected_token_error(
+                            self.span,
+                            self.prev_span,
+                            TokenKind::Fn,
+                            token.kind,
+                        );
                     }
                 }
             }
@@ -532,22 +696,29 @@ impl<'s> ParserImpl<'s> {
         span: Span,
     ) -> Result<Expression> {
         match self.scope_map.resolve(&symbol) {
-            Some((binding, _unique_reference)) => Ok(Expression {
-                kind: ExpressionKind::Reference(binding.clone()),
-                span: span,
-                type_: None,
-            }),
+            Some((binding, _unique_reference)) => {
+                if let Binding::Function(function_id) = binding {
+                    self.reference_tracker.remove(&function_id);
+                }
+                let expr = Expression {
+                    kind: ExpressionKind::Reference(binding.clone()),
+                    span: span,
+                    type_: None,
+                };
+                self.infix_expression(expr)
+            }
             None => {
                 // TODO move edit distance check into scope_map
                 use edit_distance::edit_distance;
                 let symbol_str = format!("{}", symbol);
                 let mut maybe_reference_span: Option<Span> = None;
+                let max_edit_distance = 2;
                 for scope in self.scope_map.scope_iter() {
                     for (binding_symbol, (binding, _)) in &scope.bindings {
                         let binding_str = format!("{}", binding_symbol);
                         let distance = edit_distance(&binding_str, &symbol_str);
-                        if distance <= 3 {
-                            maybe_reference_span = Some(binding.span());
+                        if distance <= max_edit_distance {
+                            maybe_reference_span = Some(binding.span(&self.ast_arena));
                         }
                     }
                 }
@@ -713,7 +884,7 @@ impl<'s> ParserImpl<'s> {
         })
     }
 
-    fn dot(&mut self, left: Expression) -> Result<Expression> {
+    fn _dot(&mut self, left: Expression) -> Result<Expression> {
         self.expect(TokenKind::Dot)?;
         let right = self.expression(Precedence::Prefix)?;
         match (left.kind, right.kind) {
@@ -746,7 +917,7 @@ impl<'s> ParserImpl<'s> {
             Unknown,
             Named,
             Positional,
-        };
+        }
         let mut arguments = vec![];
         let mut call_format = CallFormat::Unknown;
 
@@ -757,15 +928,12 @@ impl<'s> ParserImpl<'s> {
         loop {
             // End of arguments
             if let TokenKind::RParen = self.peek()?.kind {
-                debug!("Arguments list empty, exiting loop");
                 break;
             }
-
             // TODO can't parse as expression because we do name resolution here
             if let TokenKind::Identifier(_) = self.peek()?.kind {
                 let name = self.identifier()?;
                 if self.eat(TokenKind::Colon)? {
-                    debug!("named argument");
                     // Named argument
                     if call_format == CallFormat::Positional {
                         use diagnostics::error::named_argument_after_positional;
@@ -835,6 +1003,7 @@ impl<'s> ParserImpl<'s> {
             // Function call with a reference
             ExpressionKind::Reference(_) | ExpressionKind::Member { .. } => {
                 let arguments = self.arguments()?;
+                let span = span.merge(self.span);
                 let call = Call {
                     callee: left.into(),
                     arguments,
@@ -970,11 +1139,12 @@ impl<'s> ParserImpl<'s> {
 
     fn let_(&mut self) -> Result<Statement> {
         self.expect(TokenKind::Let)?;
+        let span = self.span;
         let name = self.identifier()?;
         self.expect(TokenKind::Equals)?;
         let value = self.expression(Precedence::None)?;
         let symbol = name.symbol;
-        let span = name.span.merge(value.span);
+        let span = span.merge(value.span);
         // let unique_name = self.scope_map.unique_name();
         let let_ = Let {
             name,
@@ -1025,15 +1195,18 @@ impl<'s> ParserImpl<'s> {
         })
     }
 
-    fn statement(&mut self) -> Result<Statement> {
-        match self.peek()?.kind {
+    fn statement(&mut self) -> Result<StatementId> {
+        let statement = match self.peek()?.kind {
             TokenKind::Let => self.let_(),
             TokenKind::State => self.state(),
             TokenKind::Return => self.return_(),
             TokenKind::If => self.if_(),
             TokenKind::For => self.for_(),
+            TokenKind::While => self.while_(),
             _ => self.expression_statement(),
-        }
+        }?;
+        let statement_id = self.ast_arena.statements.alloc(statement);
+        Ok(statement_id)
     }
 
     fn expression_statement(&mut self) -> Result<Statement> {
@@ -1068,19 +1241,50 @@ impl<'s> ParserImpl<'s> {
         })
     }
 
-    fn if_(&mut self) -> Result<Statement> {
+    fn if_impl(&mut self) -> Result<If> {
         self.expect(TokenKind::If)?;
         let span = self.span;
-        // self.expect(TokenKind::LParen)?;
         let condition = self.expression(Precedence::None)?;
-        // self.expect(TokenKind::RParen)?;
         let body = self.block()?;
-        let _if = If { body, condition };
+        let alternate = if self.eat(TokenKind::Else)? {
+            if TokenKind::If == self.peek()?.kind {
+                let if_ = self.if_impl()?;
+                let alternate = Else::If(if_);
+                Some(alternate.into())
+            } else {
+                let block = self.block()?;
+                let alternate = Else::Block(block);
+                Some(alternate.into())
+            }
+        } else {
+            None
+        };
         let span = self.span.merge(span);
-        Ok(Statement {
+        let if_ = If {
             span,
-            kind: StatementKind::If(_if),
+            condition,
+            body,
+            alternate,
+        };
+        Ok(if_)
+    }
+
+    fn if_(&mut self) -> Result<Statement> {
+        let if_ = self.if_impl()?;
+        Ok(Statement {
+            span: if_.span,
+            kind: StatementKind::If(if_),
         })
+    }
+
+    fn while_(&mut self) -> Result<Statement> {
+        self.expect(TokenKind::While)?;
+        let span = self.span;
+        let condition = self.expression(Precedence::None)?;
+        let body = self.block()?;
+        let span = self.span.merge(span);
+        let while_ = While { condition, body };
+        Statement::new(StatementKind::While(while_), span)
     }
 
     fn block(&mut self) -> Result<Block> {
@@ -1118,19 +1322,18 @@ impl<'s> ParserImpl<'s> {
         Ok(annotations)
     }
 
-    fn function(&mut self, is_async: bool) -> Result<Arc<Function>> {
+    fn function(&mut self, is_async: bool) -> Result<FunctionId> {
         let prev_is_async_context = self.is_async_context;
         self.is_async_context = is_async;
         self.expect(TokenKind::Fn)?;
         self.scope_map.extend();
         let name = self.identifier()?;
         let symbol = name.symbol;
+
         let type_parameters = self.type_parameters()?;
         let parameters = self.parameters()?;
         let (return_type, effect_type) = self.type_and_effect_annotation()?;
-        let body = self.block()?;
-        self.scope_map.pop();
-        self.is_async_context = prev_is_async_context;
+
         let function = Function {
             name,
             is_async,
@@ -1138,12 +1341,21 @@ impl<'s> ParserImpl<'s> {
             parameters,
             return_type,
             effect_type,
-            body,
+            body: None,
         };
-        let function = Arc::new(function);
+
+        let function_id = self.ast_arena.functions.alloc(function);
         self.scope_map
-            .define(symbol, Binding::Function(function.clone()));
-        Ok(function)
+            .define(symbol, Binding::Function(function_id));
+
+        self.reference_tracker.insert(function_id);
+
+        let body = self.block()?;
+        self.ast_arena.functions.get_mut(function_id).unwrap().body = Some(body);
+        self.scope_map.pop();
+        self.is_async_context = prev_is_async_context;
+
+        Ok(function_id)
     }
 
     fn component(&mut self, is_async: bool) -> Result<Arc<Component>> {

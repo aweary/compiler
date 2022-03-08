@@ -1,19 +1,16 @@
-import core.{Text, Stack, View}
-import core.dom.{getElementById}
 
-component HelloWorld {
-  Stack {
-   Text("Hello, world")
-     .size(42)
-   Text("This is great")
-     .size(24)
-   Text("cool cool cool")
-     .color("red")
+fn dead_code_test(a: number, b: number) {
+  let c = a + b
+  if true {
+    if true {
+      let y = 2
+      let z = 3
+      let x = 1
+    } else {
+      return 5
+    }
+  } else {
+    return 6
   }
-  .spacing(4)
-}
-
-fn main<T>() {
-  let target  = "Hello"
-  let view = HelloWorld()
+  let x = 1
 }

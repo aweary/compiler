@@ -3,6 +3,7 @@ pub mod span;
 pub mod ast;
 pub mod visit;
 pub mod precedence;
+pub mod arena;
 
 pub use token::*;
 pub use span::*;

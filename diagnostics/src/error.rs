@@ -107,7 +107,7 @@ pub fn unexpected_token_error<T>(
     };
 
     let diagnostic =
-        Diagnostic::error(UNEXPECTED_TOKEN_ERROR_TITLE.into(), vec![label, prev_label]);
+        Diagnostic::error(UNEXPECTED_TOKEN_ERROR_TITLE.into(), vec![prev_label, label]);
     Err(crate::error::Error::Diagnostic(diagnostic))
 }
 
@@ -370,7 +370,8 @@ pub fn named_argument_after_positional<T>(
     )))
 }
 
-pub fn unexpected_token_for_expression<T>(span: impl Into<Range<usize>>,
+pub fn unexpected_token_for_expression<T>(
+    span: impl Into<Range<usize>>,
     prev_span: impl Into<Range<usize>>,
 ) -> Result<T> {
     let label = Label {
@@ -388,6 +389,30 @@ pub fn unexpected_token_for_expression<T>(span: impl Into<Range<usize>>,
     Err(Error::Diagnostic(Diagnostic::error(
         "Unexpected token for expression".into(),
         vec![label, prev_label],
+    )))
+}
+
+pub fn unused_function<T>(span: impl Into<Range<usize>>) -> Result<T> {
+    let label = Label {
+        message: "This function is unused".into(),
+        range: span.into(),
+        style: LabelStyle::Secondary,
+    };
+    Err(Error::Diagnostic(Diagnostic::error(
+        "Unused Function".into(),
+        vec![label],
+    )))
+}
+
+pub fn unreachable_code<T>(span: impl Into<Range<usize>>) -> Result<T> {
+    let label = Label {
+        message: "This code is unreachable".into(),
+        range: span.into(),
+        style: LabelStyle::Primary,
+    };
+    Err(Error::Diagnostic(Diagnostic::error(
+        "Unreachable Code".into(),
+        vec![label],
     )))
 }
 

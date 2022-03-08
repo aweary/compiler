@@ -8,3 +8,4 @@ edition = "2021"
 [dependencies]
 diagnostics = { path = "../diagnostics" }
 syntax = { path = "../syntax" }
+petgraph = "0.6.0"

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::ast::*;
+use crate::{arena::FunctionId, ast::*};
 use diagnostics::result::Result;
 
 pub trait Visitor: Sized {
@@ -11,7 +11,7 @@ pub trait Visitor: Sized {
     fn visit_enum(&mut self, _enum: &mut Arc<Enum>) -> Result<()> {
         Ok(())
     }
-    
+
     fn visit_effect(&mut self, _enum: &mut Arc<EffectDef>) -> Result<()> {
         Ok(())
     }
@@ -24,7 +24,7 @@ pub trait Visitor: Sized {
         Ok(())
     }
 
-    fn visit_function(&mut self, _function: &mut Arc<Function>) -> Result<()> {
+    fn visit_function(&mut self, _function: &mut FunctionId) -> Result<()> {
         Ok(())
     }
 
@@ -54,8 +54,8 @@ pub fn walk_module(visitor: &mut impl Visitor, module: &mut Module) -> Result<()
             DefinitionKind::Effect(effect_) => {
                 visitor.visit_effect(effect_)?;
             }
-            DefinitionKind::Function(function) => {
-                visitor.visit_function(function)?;
+            DefinitionKind::Function(function_id) => {
+                visitor.visit_function(function_id)?;
             }
             // DefinitionKind::Struct(_) => {}
             DefinitionKind::Struct(struct_) => {

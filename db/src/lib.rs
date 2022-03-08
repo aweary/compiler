@@ -76,7 +76,6 @@ pub trait Compiler: Parser + FileSystem {
 fn compile(db: &dyn Compiler, path: PathBuf) -> Result<Vec<usize>> {
     let mut ast = db.parse(path)?;
     // Evaluate constants
-    ConstEvaluationStep::default().visit_module(&mut ast)?;
     Codegen::default().visit_module(&mut ast)?;
     Ok(vec![])
 }

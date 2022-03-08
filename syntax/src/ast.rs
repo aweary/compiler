@@ -1,8 +1,11 @@
+use crate::arena::{self, FunctionId, StatementId};
 use crate::span::Span;
 use common::scope_map::Referant;
 use common::symbol::Symbol;
+use diagnostics::result::Result;
 
-use std::borrow::Borrow;
+use id_arena::Id;
+
 use std::sync::Arc;
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
@@ -44,7 +47,7 @@ pub enum DefinitionKind {
     Type(Arc<TypeDef>),
     Effect(Arc<EffectDef>),
     Enum(Arc<Enum>),
-    Function(Arc<Function>),
+    Function(FunctionId),
     Component(Arc<Component>),
 }
 
@@ -161,7 +164,7 @@ pub enum Binding {
     Let(Arc<Let>),
     State(Arc<State>),
     Enum(Arc<Enum>),
-    Function(Arc<Function>),
+    Function(Id<Function>),
     Component(Arc<Component>),
     Parameter(Arc<Parameter>),
     Const(Arc<Const>),
@@ -171,12 +174,15 @@ pub enum Binding {
 }
 
 impl Binding {
-    pub fn span(&self) -> Span {
+    pub fn span(&self, arena: &arena::AstArena) -> Span {
         match self {
             Binding::Let(let_) => (&**let_).name.span,
             Binding::State(state) => (&**state).name.span,
             Binding::Enum(enum_) => (&**enum_).name.span,
-            Binding::Function(func) => (&**func).name.span,
+            Binding::Function(func) => {
+                let func = arena.functions.get(*func).expect("function not found");
+                func.name.span
+            }
             Binding::Component(component) => (&**component).name.span,
             Binding::Parameter(param) => (&**param).name.span,
             Binding::Const(const_) => (&**const_).name.span,
@@ -323,12 +329,23 @@ pub enum StatementKind {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct If {
+    pub span: Span,
     pub condition: Expression,
     pub body: Block,
+    pub alternate: Option<Box<Else>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct While {}
+pub enum Else {
+    If(If),
+    Block(Block),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct While {
+    pub condition: Expression,
+    pub body: Block,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct For {
@@ -357,9 +374,15 @@ pub struct Statement {
     pub kind: StatementKind,
 }
 
+impl Statement {
+    pub fn new(kind: StatementKind, span: Span) -> Result<Self> {
+        Ok(Statement { span, kind })
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Block {
-    pub statements: Vec<Statement>,
+    pub statements: Vec<StatementId>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -370,7 +393,7 @@ pub struct Function {
     pub parameters: Option<Vec<Arc<Parameter>>>,
     pub return_type: Option<TypeExpression>,
     pub effect_type: Option<Effect>,
-    pub body: Block,
+    pub body: Option<Block>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -393,5 +416,11 @@ pub struct Identifier {
 impl Identifier {
     pub fn new(symbol: Symbol, span: Span) -> Self {
         Self { symbol, span }
+    }
+}
+
+impl std::cmp::PartialEq<&str> for Identifier {
+    fn eq(&self, other: &&str) -> bool {
+        format!("{}", self.symbol) == *other
     }
 }

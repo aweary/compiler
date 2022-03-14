@@ -1,13 +1,10 @@
-use std::ops::ControlFlow;
-
-use crate::parser::{constrct_cfg_from_block, ParserImpl};
+use crate::control_flow::constrct_cfg_from_block;
+use crate::parser::ParserImpl;
 use common::control_flow_graph::ControlFlowGraph;
 use diagnostics::result::Result;
 use syntax::{
-    arena::{AstArena, FunctionId, StatementId},
-    ast::*,
+    arena::{AstArena, FunctionId},
     visit::Visitor,
-    Precedence, Span, Token, TokenKind,
 };
 
 pub fn parse_cfg_from_statements(stmts: &str) -> String {

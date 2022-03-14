@@ -462,9 +462,9 @@ fn cfg_test() {
     );
 
     insta::assert_display_snapshot!(
-      "nested if/else, early return (dead code)",
-      parse_cfg_from_statements(
-        "
+        "nested if/else, early return (dead code)",
+        parse_cfg_from_statements(
+            "
         if true {
           if true {
             return 1
@@ -482,13 +482,13 @@ fn cfg_test() {
         let b = 1
         let c = 1
         "
-      )
+        )
     );
 
     insta::assert_display_snapshot!(
-      "single if/else-if statement",
-      parse_cfg_from_statements(
-        "
+        "single if/else-if statement",
+        parse_cfg_from_statements(
+            "
         if true {
           let a = 1
         } else if true {
@@ -500,13 +500,13 @@ fn cfg_test() {
           let c = 1
         }
         "
-      )
+        )
     );
 
     insta::assert_display_snapshot!(
-      "single long if/else-if statement",
-      parse_cfg_from_statements(
-        "
+        "single long if/else-if statement",
+        parse_cfg_from_statements(
+            "
         if true {
           let a = 1
         } else if true {
@@ -529,6 +529,192 @@ fn cfg_test() {
           let e = 1
         }
         "
-      )
+        )
+    );
+
+    insta::assert_display_snapshot!(
+        "single if/else-if statement, early return (dead code)",
+        parse_cfg_from_statements(
+            "
+        if true {
+          return 1
+        } else if true {
+          return 2
+        } else {
+          return 3
+        }
+        let a = 1
+        let b = 1
+        let c = 1
+        "
+        )
+    );
+
+    insta::assert_display_snapshot!(
+        "single if/else-if statement, without else block",
+        parse_cfg_from_statements(
+            "
+         if true {
+          let a = 1
+         } else if true {
+           let a = 1
+           let b = 1
+         }
+        "
+        )
+    );
+
+    insta::assert_display_snapshot!(
+        "single if/else-if statement, without else block, early return",
+        parse_cfg_from_statements(
+            "
+        let a = 1
+         if true {
+           return 1
+         } else if true {
+           return 2
+         }
+         let a = 1
+         let b = 2
+        "
+        )
+    );
+
+    insta::assert_display_snapshot!(
+        "multiple if/else-if statements",
+        parse_cfg_from_statements(
+            "
+        if true {
+          let a = 1
+        } else if true {
+          let a = 1
+          let b = 2
+        }
+        if true {
+          let a = 1
+          let b = 2
+          let c = 3
+        } else if true {
+          let a = 1
+          let b = 2
+          let c = 3
+          let d = 4
+        } else {
+          let a = 1
+          let b = 2
+          let c = 3
+          let d = 4
+          let e = 5
+        }
+        let a = 1
+        if true {
+          let a = 1
+          let b = 2
+          let c = 3
+        } else if true {
+          let a = 1
+          let b = 2
+          let c = 3
+          let d = 4
+        } else {
+          let a = 1
+          let b = 2
+          let c = 3
+          let d = 4
+          let e = 5
+        }
+        "
+        )
+    );
+
+    insta::assert_display_snapshot!(
+        "nested if/else-if statements",
+        parse_cfg_from_statements(
+            "
+      if true {
+        let a = 1
+        if true {
+          let a = 1
+          let b = 2
+        } else if true {
+          let a = 1
+          let b = 2
+          let c = 3
+        }
+      } else if true {
+        let a = 1
+        let b = 2
+        let c = 3
+        let d = 4
+        if true {
+          let a = 1
+        } else {
+          let c = 2
+        }
+      } else {
+        if true {
+          let a = 1
+        } else if true {
+          let b = 1
+          let c = 2
+        }
+        let a = 1
+        let b = 2
+        let c = 3
+        let d = 4
+        let e = 5
+      }
+      "
+        )
+    );
+
+    insta::assert_display_snapshot!(
+        "nested if/else-if statements, early return (dead code)",
+        parse_cfg_from_statements(
+            "
+      if true {
+        if true {
+          return 5
+        } else if true {
+          return 5
+        } else {
+          if true {
+            return 5
+          } else if true {
+            return 5
+          } else {
+            let a = 1
+            return 5
+          }
+          # DEAD CODE
+          let a = 1
+        }
+      } else if true {
+        if true {
+          return 5
+        } else if true {
+          return 5
+        } else {
+          return 5
+        }
+        # DEAD CODE
+        let a = 1
+      } else {
+        if true {
+          return 5
+        } else if true {
+          return 5
+        } else {
+          return 5
+        }
+        # DEAD CODE
+        let a = 1
+      }
+      # DEAD CODE
+      let a = 1
+      let b = 1
+      let c = 1
+      "
+        )
     );
 }

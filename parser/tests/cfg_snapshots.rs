@@ -718,3 +718,42 @@ fn cfg_test() {
         )
     );
 }
+
+#[test]
+fn while_cfg_snapshots() {
+  insta::assert_display_snapshot!(
+    "single while statement",
+    parse_cfg_from_statements(
+      "
+      while true {
+        let a = 1
+      }
+      "
+    )
+  );
+
+  insta::assert_display_snapshot!(
+    "single while statement, trailing statement",
+    parse_cfg_from_statements(
+      "
+      while true {
+        let a = 1
+      }
+      let a = 1
+      let b = 1
+      "
+    )
+  );
+
+  insta::assert_display_snapshot!(
+    "single while statement, leading statement",
+    parse_cfg_from_statements(
+      "
+      let a = 1
+      while true {
+        let a = 1
+      }
+      "
+    )
+  );
+}

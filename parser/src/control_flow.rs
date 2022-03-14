@@ -1,5 +1,8 @@
 use diagnostics::result::Result;
-use std::ops::Deref;
+use std::{
+    collections::{HashMap, HashSet},
+    ops::Deref,
+};
 use syntax::{
     arena::{AstArena, FunctionId},
     ast::*,
@@ -10,11 +13,19 @@ use common::control_flow_graph::{BasicBlock, BlockIndex, ControlFlowEdge, Contro
 
 pub struct ControlFlowAnalysis<'a> {
     ast: &'a mut AstArena,
+    cfg_map: HashMap<FunctionId, ControlFlowGraph<u32>>,
 }
 
 impl<'a> ControlFlowAnalysis<'a> {
     pub fn new(ast: &'a mut AstArena) -> Self {
-        Self { ast }
+        Self {
+            ast,
+            cfg_map: HashMap::default(),
+        }
+    }
+
+    pub fn finish(self) -> HashMap<FunctionId, ControlFlowGraph<u32>> {
+        self.cfg_map
     }
 }
 
@@ -23,13 +34,22 @@ impl<'a> Visitor for ControlFlowAnalysis<'a> {
         let function = self.ast.functions.get(*function_id).unwrap();
         let body = function.body.as_ref().unwrap();
         let cfg = constrct_cfg_from_block(body, &self.ast);
-        println!("FINAL\n\n");
-        cfg.print();
+
+        let unreachable_block_indicies = cfg.find_unreachable_blocks();
+
+        let unreachable: Vec<Option<&BasicBlock<u32>>> = unreachable_block_indicies
+            .iter()
+            .map(|block_index| cfg.get_block(*block_index))
+            .collect();
+        
+        self.cfg_map.insert(*function_id, cfg);
         Ok(())
     }
 }
 
 pub fn constrct_cfg_from_block(block: &Block, ast: &AstArena) -> ControlFlowGraph<u32> {
+    let mut loop_indicies = HashSet::<BlockIndex>::default();
+
     let mut cfg = ControlFlowGraph::default();
     let mut entry_block_index: Option<BlockIndex> = None;
     let mut basic_block = BasicBlock::<u32>::new();
@@ -71,6 +91,51 @@ pub fn constrct_cfg_from_block(block: &Block, ast: &AstArena) -> ControlFlowGrap
 
                     basic_block = BasicBlock::<u32>::new();
                 }
+
+                StatementKind::While(while_) => {
+                    let block_index = cfg.add_block(basic_block);
+
+                    let mut while_body_cfg = constrct_cfg_from_block(&while_.body, ast);
+                    let while_body_has_early_return = while_body_cfg.has_early_return();
+
+                    // Delete the normal flow edge from the last block to the exit node
+                    while_body_cfg.delete_normal_edge(
+                        while_body_cfg.last_index(),
+                        while_body_cfg.exit_index(),
+                    );
+
+                    let true_edge = ControlFlowEdge::ConditionTrue(1);
+                    let false_edge = ControlFlowEdge::ConditionFalse(1);
+
+                    while_body_cfg.print();
+
+                    cfg.consume_subgraph(while_body_cfg, Some(true_edge), block_index);
+
+                    loop_indicies.insert(cfg.last_index());
+
+                    if !while_body_has_early_return {
+                      cfg.add_edge(cfg.last_index(), block_index, ControlFlowEdge::Normal);
+                    }
+
+                    cfg.enqueue_edge(block_index, false_edge);
+
+                    println!("after while");
+                    cfg.print();
+
+
+                    // // let while_cfg = construct_cfg_from_while(while_, ast, &2);
+
+                    // let while_cfg_has_early_return = while_cfg.has_early_return();
+
+                    // if while_cfg_has_early_return {
+                    //     cfg.set_has_early_return(true);
+                    // }
+
+                    // cfg.consume_subgraph(while_cfg, Some(block_index), block_index);
+
+                    basic_block = BasicBlock::<u32>::new();
+                }
+
                 _ => {
                     // Do nothing for now...
                 }
@@ -83,15 +148,13 @@ pub fn constrct_cfg_from_block(block: &Block, ast: &AstArena) -> ControlFlowGrap
         cfg.add_block(basic_block);
     }
 
-    if !cfg.has_early_return() {
+    // Don't automatically add an edge to the exit node if there is an early return
+    // in this block, or the last block is a loop
+    if !cfg.has_early_return() && !loop_indicies.contains(&cfg.last_index()) {
         cfg.add_edge(cfg.last_index(), cfg.exit_index(), ControlFlowEdge::Normal);
     }
 
     cfg.flush_edge_queue(cfg.exit_index());
-
-    if !cfg.has_early_return() {
-        cfg.add_edge(cfg.last_index(), cfg.exit_index(), ControlFlowEdge::Normal);
-    }
 
     cfg
 }

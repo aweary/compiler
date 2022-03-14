@@ -31,6 +31,7 @@ fn parse(db: &dyn Parser, path: PathBuf) -> Result<Module> {
     let mut module = parser.parse_module()?;
     let mut cfg_analysis = ControlFlowAnalysis::new(&mut ast_arena);
     cfg_analysis.visit_module(&mut module)?;
+    let cfg_map = cfg_analysis.finish();
     Ok(module)
 }
 

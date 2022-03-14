@@ -275,6 +275,15 @@ impl<T: std::fmt::Debug + Clone> ControlFlowGraph<T> {
         self.graph.add_edge(from.0, to.0, edge);
     }
 
+    pub fn delete_normal_edge(&mut self, from: BlockIndex, to: BlockIndex) {
+        if let Some(edge_index) = self.graph.find_edge(from.0, to.0) {
+            let existing_edge = &self.graph[edge_index];
+            if let ControlFlowEdge::Normal = existing_edge {
+                self.graph.remove_edge(edge_index);
+            }
+        }
+    }
+
     pub fn add_edge_to_exit(&mut self, from: BlockIndex, edge: ControlFlowEdge<T>) {
         self.graph.add_edge(from.0, self.exit_index.0, edge);
     }
@@ -304,7 +313,7 @@ impl<T: std::fmt::Debug + Clone> ControlFlowGraph<T> {
         for node_index in self.graph.node_indices() {
             match &self.graph[node_index] {
                 ControlFlowNode::Entry | ControlFlowNode::Exit => continue,
-                ControlFlowNode::BasicBlock(_) => {
+                ControlFlowNode::BasicBlock(block) => {
                     if self
                         .graph
                         .neighbors_directed(node_index, petgraph::Incoming)

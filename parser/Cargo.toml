@@ -18,3 +18,4 @@ log = "0.4.11"
 id-arena = "2.2.1"
 common = { path = "../common" }
 edit-distance = "2.1.0"
+insta = "1.13.0"

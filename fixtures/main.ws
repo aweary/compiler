@@ -1,16 +1,13 @@
 
 fn dead_code_test(a: number, b: number) {
-  let c = a + b
   if true {
-    if true {
-      let y = 2
-      let z = 3
-      let x = 1
-    } else {
-      return 5
-    }
+    let a = 1
+  } else if true {
+    let a = 1
+    let b = 1
   } else {
-    return 6
+    let a = 1
+    let b = 1
+    let c = 1
   }
-  let x = 1
 }

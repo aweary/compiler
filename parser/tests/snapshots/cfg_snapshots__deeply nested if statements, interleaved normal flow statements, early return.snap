@@ -1,0 +1,30 @@
+---
+source: parser/tests/cfg_snapshots.rs
+expression: "parse_cfg_from_statements(\"\n            if true {\n              if true {\n                let x = 1\n                if true {\n                  if true {\n                    let y = 1\n                    let z = 1\n                    if true {\n                      return 1\n                    }\n                  }\n                  let a = 1\n                  let b = 2\n                  let c = 3\n                }\n              }\n            }\")"
+---
+digraph {
+    0 [ label = "Entry" ]
+    1 [ label = "Exit" ]
+    2 [ label = "BasicBlock(0)" ]
+    3 [ label = "BasicBlock(0)" ]
+    4 [ label = "BasicBlock(1)" ]
+    5 [ label = "BasicBlock(0)" ]
+    6 [ label = "BasicBlock(2)" ]
+    7 [ label = "BasicBlock(1)" ]
+    8 [ label = "BasicBlock(3)" ]
+    0 -> 2 [ label = "Normal" ]
+    2 -> 3 [ label = "ConditionTrue(2)" ]
+    3 -> 4 [ label = "ConditionTrue(2)" ]
+    4 -> 5 [ label = "ConditionTrue(2)" ]
+    5 -> 6 [ label = "ConditionTrue(2)" ]
+    6 -> 7 [ label = "ConditionTrue(2)" ]
+    7 -> 1 [ label = "Return" ]
+    5 -> 8 [ label = "ConditionFalse(2)" ]
+    7 -> 8 [ label = "Normal" ]
+    6 -> 8 [ label = "ConditionFalse(2)" ]
+    8 -> 1 [ label = "Normal" ]
+    2 -> 1 [ label = "ConditionFalse(2)" ]
+    3 -> 1 [ label = "ConditionFalse(2)" ]
+    4 -> 1 [ label = "ConditionFalse(2)" ]
+}
+

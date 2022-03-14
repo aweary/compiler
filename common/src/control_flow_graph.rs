@@ -16,7 +16,7 @@ pub enum ControlFlowEdge<T> {
     Return,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub enum ControlFlowNode<T> {
     Entry,
     BasicBlock(BasicBlock<T>),
@@ -24,8 +24,30 @@ pub enum ControlFlowNode<T> {
 }
 
 #[derive(Debug, Clone)]
+pub struct PartialEdge<T> {
+    pub source: BlockIndex,
+    pub edge: ControlFlowEdge<T>,
+}
+
+impl<T> std::fmt::Debug for ControlFlowNode<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ControlFlowNode::Entry => write!(f, "Entry"),
+            ControlFlowNode::BasicBlock(bb) => write!(f, "{:?}", bb),
+            ControlFlowNode::Exit => write!(f, "Exit"),
+        }
+    }
+}
+
+#[derive(Clone)]
 pub struct BasicBlock<T> {
     pub statements: Vec<T>,
+}
+
+impl<T> std::fmt::Debug for BasicBlock<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "BasicBlock({})", self.statements.len())
+    }
 }
 
 impl<T> BasicBlock<T> {
@@ -46,7 +68,7 @@ impl<T> BasicBlock<T> {
 
 pub struct ControlFlowGraph<T> {
     graph: DiGraph<ControlFlowNode<T>, ControlFlowEdge<T>>,
-    edge_queue: VecDeque<(BlockIndex, ControlFlowEdge<T>)>,
+    edge_queue: VecDeque<PartialEdge<T>>,
     has_early_return: bool,
     entry_index: BlockIndex,
     exit_index: BlockIndex,
@@ -72,6 +94,10 @@ impl<T> Default for ControlFlowGraph<T> {
 }
 
 impl<T: std::fmt::Debug + Clone> ControlFlowGraph<T> {
+    pub fn format(&self) -> String {
+        format!("{:?}", Dot::with_config(&self.graph, &[]))
+    }
+
     pub fn print(&self) {
         println!("{:?}", Dot::with_config(&self.graph, &[]));
     }
@@ -93,9 +119,9 @@ impl<T: std::fmt::Debug + Clone> ControlFlowGraph<T> {
         other: Self,
         entry_edge: Option<ControlFlowEdge<T>>,
         entry_index: BlockIndex,
-        parent_has_early_return: bool,
-    ) -> Vec<(BlockIndex, ControlFlowEdge<T>)> {
-        let mut edges_to_enqueue: Vec<(BlockIndex, ControlFlowEdge<T>)> = vec![];
+    ) {
+        let other_has_early_return = other.has_early_return();
+        let mut edges_to_enqueue: Vec<PartialEdge<T>> = vec![];
 
         let other_graph = other.graph;
         let other_node_indicies = other_graph.node_indices();
@@ -133,34 +159,11 @@ impl<T: std::fmt::Debug + Clone> ControlFlowGraph<T> {
 
             // A copy of this edge's weight, to be used in this graph
             let edge_weight = if other_source_index == other_entry_index.0 {
-                if parent_has_early_return {
-                    continue;
-                }
                 // If the edge starts at the entry node, use the provided entry edge
                 // instead of the subgraph's.
                 entry_edge.clone().unwrap_or(other_raw_edge.weight.clone())
             } else {
                 other_raw_edge.weight.clone()
-            };
-
-            // if the TARGET node is the subgraph's EXIT node, then this edge needs to be
-            // removed and added to the edge queue for this graph. Since this should be
-            // pointing to the *next* block.
-            let target_index = if other_target_index == other_exit_index.0 {
-                // Return edges are extra special, since we *know* they should
-                // point to the exit node of this graph.
-                if let ControlFlowEdge::Return = edge_weight {
-                    self.exit_index.0
-                } else {
-                    edges_to_enqueue.push((
-                        BlockIndex(node_index_hash_map[&other_source_index]),
-                        edge_weight,
-                    ));
-                    continue;
-                }
-            } else {
-                // Otherwise, we need to map the source node index to the new one
-                node_index_hash_map[&other_target_index]
             };
 
             // If the SOURCE node is the subgraph's ENTRY node, we need to retarget it to
@@ -172,11 +175,35 @@ impl<T: std::fmt::Debug + Clone> ControlFlowGraph<T> {
                 node_index_hash_map[&other_source_index]
             };
 
+            // if the TARGET node is the subgraph's EXIT node, then this edge needs to be
+            // removed and added to the edge queue for this graph. Since this should be
+            // pointing to the *next* block.
+            let target_index = if other_target_index == other_exit_index.0 {
+                // Return edges are extra special, since we *know* they should
+                // point to the exit node of this graph.
+                if let ControlFlowEdge::Return = edge_weight {
+                    self.exit_index.0
+                } else {
+                    let partial_edge = PartialEdge {
+                        source: BlockIndex(source_index),
+                        edge: edge_weight,
+                    };
+                    edges_to_enqueue.push(partial_edge);
+                    continue;
+                }
+            } else {
+                // Otherwise, we need to map the source node index to the new one
+                node_index_hash_map[&other_target_index]
+            };
+
             // Now we can add the edge to the graph
             self.graph.add_edge(source_index, target_index, edge_weight);
         }
-        println!("edges_to_enqueue: {:?}", edges_to_enqueue);
-        edges_to_enqueue
+        if !other_has_early_return {
+            for PartialEdge { source, edge } in edges_to_enqueue {
+                self.enqueue_edge(source, edge);
+            }
+        }
     }
 
     pub fn entry_index(&self) -> BlockIndex {
@@ -196,7 +223,11 @@ impl<T: std::fmt::Debug + Clone> ControlFlowGraph<T> {
     }
 
     pub fn enqueue_edge(&mut self, block_index: BlockIndex, edge: ControlFlowEdge<T>) {
-        self.edge_queue.push_back((block_index, edge));
+        let edge = PartialEdge {
+            source: block_index,
+            edge,
+        };
+        self.edge_queue.push_back(edge);
     }
 
     pub fn add_block(&mut self, block: BasicBlock<T>) -> BlockIndex {
@@ -210,19 +241,37 @@ impl<T: std::fmt::Debug + Clone> ControlFlowGraph<T> {
         index
     }
 
-    pub fn flush_edge_queue(&mut self, to: BlockIndex) {
-        while let Some((block_index, edge)) = self.edge_queue.pop_front() {
-            self.add_edge(block_index, to, edge);
+    /// Like `add_block` but doesn't update any index pointers
+    pub fn add_block_raw(&mut self, block: BasicBlock<T>) -> BlockIndex {
+        let index = BlockIndex(self.graph.add_node(ControlFlowNode::BasicBlock(block)));
+        index
+    }
+
+    pub fn flush_edge_queue(&mut self, target: BlockIndex) {
+        while let Some(PartialEdge { source, edge }) = self.edge_queue.pop_front() {
+            self.add_edge(source, target, edge);
         }
     }
 
     pub fn edge_queue_contains(&mut self, block_index: BlockIndex) -> bool {
         self.edge_queue
             .iter()
-            .any(|(index, _)| *index == block_index)
+            .any(|PartialEdge { source, .. }| *source == block_index)
     }
 
     pub fn add_edge(&mut self, from: BlockIndex, to: BlockIndex, edge: ControlFlowEdge<T>) {
+        // TODO this is a bit of a hack. We should probably have a way to
+        // avoid adding duplicate edges in the first place.
+        if let Some(edge_index) = self.graph.find_edge(from.0, to.0) {
+            let existing_edge = &self.graph[edge_index];
+            match (&edge, existing_edge) {
+                (ControlFlowEdge::Normal, ControlFlowEdge::Normal)
+                | (ControlFlowEdge::Return, ControlFlowEdge::Return) => return,
+                _ => {
+                    // Do nothing
+                }
+            }
+        }
         self.graph.add_edge(from.0, to.0, edge);
     }
 

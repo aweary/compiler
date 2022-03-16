@@ -5,6 +5,7 @@ pub type FunctionId = Id<Function>;
 pub type ComponentId = Id<Component>;
 pub type EnumId = Id<Enum>;
 pub type StatementId = Id<Statement>;
+pub type ExpressionId = Id<Expression>;
 
 #[derive(Default)]
 pub struct AstArena {
@@ -12,4 +13,5 @@ pub struct AstArena {
     pub components: Arena<Component>,
     pub enums: Arena<Enum>,
     pub statements: Arena<Statement>,
+    pub expressions: Arena<Expression>,
 }

@@ -31,7 +31,7 @@ fn parse(db: &dyn Parser, path: PathBuf) -> Result<Module> {
     let mut module = parser.parse_module()?;
     let mut cfg_analysis = ControlFlowAnalysis::new(&mut ast_arena);
     cfg_analysis.visit_module(&mut module)?;
-    let cfg_map = cfg_analysis.finish();
+    let _cfg_map = cfg_analysis.finish();
     Ok(module)
 }
 
@@ -1095,7 +1095,7 @@ impl<'s> ParserImpl<'s> {
         let span = self.span.merge(span);
         let if_ = If {
             span,
-            condition,
+            condition: self.ast_arena.expressions.alloc(condition),
             body,
             alternate,
         };
@@ -1114,6 +1114,7 @@ impl<'s> ParserImpl<'s> {
         self.expect(TokenKind::While)?;
         let span = self.span;
         let condition = self.expression(Precedence::None)?;
+        let condition = self.ast_arena.expressions.alloc(condition);
         let body = self.block()?;
         let span = self.span.merge(span);
         let while_ = While { condition, body };

@@ -345,41 +345,42 @@ fn cfg_test() {
         "deeply nested if statements",
         parse_cfg_from_statements(
             "
-    if true {
-      if true {
-        if true {
           if true {
             if true {
-              let y = 1
+              if true {
+                if true {
+                  if true {
+                    let y = 1
+                  }
+                }
+              }
             }
           }
-        }
-      }
-    }
-  "
+        "
         )
     );
+
     insta::assert_display_snapshot!(
         "deeply nested if statements, interleaved normal flow statements",
         parse_cfg_from_statements(
             "
-    if true {
-      if true {
-        let x = 1
-        if true {
-          if true {
-            let y = 1
-            let z = 1
-            if true {
-              let a = 1
-              let b = 1
-              let c = 1
-            }
-          }
-        }
-      }
-    }
-  "
+              if true {
+                if true {
+                  let x = 1
+                  if true {
+                    if true {
+                      let y = 1
+                      let z = 1
+                      if true {
+                        let a = 1
+                        let b = 1
+                        let c = 1
+                      }
+                    }
+                  }
+                }
+              }
+            "
         )
     );
 
@@ -387,23 +388,23 @@ fn cfg_test() {
         "deeply nested if statements, interleaved normal flow statements, early return",
         parse_cfg_from_statements(
             "
-            if true {
               if true {
-                let x = 1
                 if true {
+                  let x = 1
                   if true {
-                    let y = 1
-                    let z = 1
                     if true {
-                      return 1
+                      let y = 1
+                      let z = 1
+                      if true {
+                        return 1
+                      }
                     }
+                    let a = 1
+                    let b = 2
+                    let c = 3
                   }
-                  let a = 1
-                  let b = 2
-                  let c = 3
                 }
-              }
-            }"
+              }"
         )
     );
 
@@ -411,24 +412,24 @@ fn cfg_test() {
         "nested if/else statements",
         parse_cfg_from_statements(
             "
-        if true {
-          let a = 1
-        } else {
-          let a = 1
-          let b = 1
-          if true {
-            let a = 1
-            let b = 1
-            let c = 1
-          } else {
-            let a = 1
-            let b = 1
-            let c = 1
-            let d = 1
-          }
-          let b = 1 
-        }
-        "
+              if true {
+                let a = 1
+              } else {
+                let a = 1
+                let b = 1
+                if true {
+                  let a = 1
+                  let b = 1
+                  let c = 1
+                } else {
+                  let a = 1
+                  let b = 1
+                  let c = 1
+                  let d = 1
+                }
+                let b = 1
+              }
+              "
         )
     );
 
@@ -436,28 +437,28 @@ fn cfg_test() {
         "nested if/else statements, leading and trailing statements",
         parse_cfg_from_statements(
             "
-      let a = 1
-      let b = 1
-      if true {
-        let a = 1
-      } else {
-        let a = 1
-        let b = 1
-        if true {
-          let a = 1
-          let b = 1
-          let c = 1
-        } else {
-          let a = 1
-          let b = 1
-          let c = 1
-          let d = 1
-        }
-        let b = 1 
-      }
-      let c = 1
-      let d = 1
-      "
+              let a = 1
+              let b = 1
+              if true {
+                let a = 1
+              } else {
+                let a = 1
+                let b = 1
+                if true {
+                  let a = 1
+                  let b = 1
+                  let c = 1
+                } else {
+                  let a = 1
+                  let b = 1
+                  let c = 1
+                  let d = 1
+                }
+                let b = 1
+              }
+              let c = 1
+              let d = 1
+              "
         )
     );
 
@@ -465,23 +466,23 @@ fn cfg_test() {
         "nested if/else, early return (dead code)",
         parse_cfg_from_statements(
             "
-        if true {
           if true {
-            return 1
+            if true {
+              return 1
+            } else {
+              return 2
+            }
           } else {
-            return 2
+            if true {
+              return 1
+            } else {
+              return 2
+            }
           }
-        } else {
-          if true {
-            return 1
-          } else {
-            return 2
-          }
-        }
-        let a = 1
-        let b = 1
-        let c = 1
-        "
+          let a = 1
+          let b = 1
+          let c = 1
+          "
         )
     );
 
@@ -489,17 +490,17 @@ fn cfg_test() {
         "single if/else-if statement",
         parse_cfg_from_statements(
             "
-        if true {
-          let a = 1
-        } else if true {
-          let a = 1
-          let b = 1
-        } else {
-          let a = 1
-          let b = 1
-          let c = 1
-        }
-        "
+          if true {
+            let a = 1
+          } else if true {
+            let a = 1
+            let b = 1
+          } else {
+            let a = 1
+            let b = 1
+            let c = 1
+          }
+          "
         )
     );
 
@@ -507,28 +508,28 @@ fn cfg_test() {
         "single long if/else-if statement",
         parse_cfg_from_statements(
             "
-        if true {
-          let a = 1
-        } else if true {
-          let a = 1
-          let b = 1
-        } else if true {
-          let a = 1
-          let b = 1
-          let c = 1
-        } else if true {
-          let a = 1
-          let b = 1
-          let c = 1
-          let d = 1
-        } else {
-          let a = 1
-          let b = 1
-          let c = 1
-          let d = 1
-          let e = 1
-        }
-        "
+          if true {
+            let a = 1
+          } else if true {
+            let a = 1
+            let b = 1
+          } else if true {
+            let a = 1
+            let b = 1
+            let c = 1
+          } else if true {
+            let a = 1
+            let b = 1
+            let c = 1
+            let d = 1
+          } else {
+            let a = 1
+            let b = 1
+            let c = 1
+            let d = 1
+            let e = 1
+          }
+          "
         )
     );
 
@@ -536,17 +537,17 @@ fn cfg_test() {
         "single if/else-if statement, early return (dead code)",
         parse_cfg_from_statements(
             "
-        if true {
-          return 1
-        } else if true {
-          return 2
-        } else {
-          return 3
-        }
-        let a = 1
-        let b = 1
-        let c = 1
-        "
+          if true {
+            return 1
+          } else if true {
+            return 2
+          } else {
+            return 3
+          }
+          let a = 1
+          let b = 1
+          let c = 1
+          "
         )
     );
 
@@ -554,13 +555,13 @@ fn cfg_test() {
         "single if/else-if statement, without else block",
         parse_cfg_from_statements(
             "
-         if true {
-          let a = 1
-         } else if true {
-           let a = 1
-           let b = 1
-         }
-        "
+           if true {
+            let a = 1
+           } else if true {
+             let a = 1
+             let b = 1
+           }
+          "
         )
     );
 
@@ -568,15 +569,15 @@ fn cfg_test() {
         "single if/else-if statement, without else block, early return",
         parse_cfg_from_statements(
             "
-        let a = 1
-         if true {
-           return 1
-         } else if true {
-           return 2
-         }
-         let a = 1
-         let b = 2
-        "
+          let a = 1
+           if true {
+             return 1
+           } else if true {
+             return 2
+           }
+           let a = 1
+           let b = 2
+          "
         )
     );
 
@@ -584,176 +585,176 @@ fn cfg_test() {
         "multiple if/else-if statements",
         parse_cfg_from_statements(
             "
-        if true {
-          let a = 1
-        } else if true {
-          let a = 1
-          let b = 2
-        }
-        if true {
-          let a = 1
-          let b = 2
-          let c = 3
-        } else if true {
-          let a = 1
-          let b = 2
-          let c = 3
-          let d = 4
-        } else {
-          let a = 1
-          let b = 2
-          let c = 3
-          let d = 4
-          let e = 5
-        }
-        let a = 1
-        if true {
-          let a = 1
-          let b = 2
-          let c = 3
-        } else if true {
-          let a = 1
-          let b = 2
-          let c = 3
-          let d = 4
-        } else {
-          let a = 1
-          let b = 2
-          let c = 3
-          let d = 4
-          let e = 5
-        }
-        "
-        )
-    );
-
-    insta::assert_display_snapshot!(
-        "nested if/else-if statements",
-        parse_cfg_from_statements(
-            "
-      if true {
-        let a = 1
-        if true {
-          let a = 1
-          let b = 2
-        } else if true {
-          let a = 1
-          let b = 2
-          let c = 3
-        }
-      } else if true {
-        let a = 1
-        let b = 2
-        let c = 3
-        let d = 4
-        if true {
-          let a = 1
-        } else {
-          let c = 2
-        }
-      } else {
-        if true {
-          let a = 1
-        } else if true {
-          let b = 1
-          let c = 2
-        }
-        let a = 1
-        let b = 2
-        let c = 3
-        let d = 4
-        let e = 5
-      }
-      "
-        )
-    );
-
-    insta::assert_display_snapshot!(
-        "nested if/else-if statements, early return (dead code)",
-        parse_cfg_from_statements(
-            "
-      if true {
-        if true {
-          return 5
-        } else if true {
-          return 5
-        } else {
           if true {
-            return 5
+            let a = 1
           } else if true {
-            return 5
+            let a = 1
+            let b = 2
+          }
+          if true {
+            let a = 1
+            let b = 2
+            let c = 3
+          } else if true {
+            let a = 1
+            let b = 2
+            let c = 3
+            let d = 4
           } else {
             let a = 1
-            return 5
+            let b = 2
+            let c = 3
+            let d = 4
+            let e = 5
           }
-          # DEAD CODE
           let a = 1
-        }
-      } else if true {
-        if true {
-          return 5
-        } else if true {
-          return 5
-        } else {
-          return 5
-        }
-        # DEAD CODE
-        let a = 1
-      } else {
-        if true {
-          return 5
-        } else if true {
-          return 5
-        } else {
-          return 5
-        }
-        # DEAD CODE
-        let a = 1
-      }
-      # DEAD CODE
-      let a = 1
-      let b = 1
-      let c = 1
-      "
+          if true {
+            let a = 1
+            let b = 2
+            let c = 3
+          } else if true {
+            let a = 1
+            let b = 2
+            let c = 3
+            let d = 4
+          } else {
+            let a = 1
+            let b = 2
+            let c = 3
+            let d = 4
+            let e = 5
+          }
+          "
         )
     );
+
+    //   insta::assert_display_snapshot!(
+    //       "nested if/else-if statements",
+    //       parse_cfg_from_statements(
+    //           "
+    //     if true {
+    //       let a = 1
+    //       if true {
+    //         let a = 1
+    //         let b = 2
+    //       } else if true {
+    //         let a = 1
+    //         let b = 2
+    //         let c = 3
+    //       }
+    //     } else if true {
+    //       let a = 1
+    //       let b = 2
+    //       let c = 3
+    //       let d = 4
+    //       if true {
+    //         let a = 1
+    //       } else {
+    //         let c = 2
+    //       }
+    //     } else {
+    //       if true {
+    //         let a = 1
+    //       } else if true {
+    //         let b = 1
+    //         let c = 2
+    //       }
+    //       let a = 1
+    //       let b = 2
+    //       let c = 3
+    //       let d = 4
+    //       let e = 5
+    //     }
+    //     "
+    //       )
+    //   );
+
+    //   insta::assert_display_snapshot!(
+    //       "nested if/else-if statements, early return (dead code)",
+    //       parse_cfg_from_statements(
+    //           "
+    //     if true {
+    //       if true {
+    //         return 5
+    //       } else if true {
+    //         return 5
+    //       } else {
+    //         if true {
+    //           return 5
+    //         } else if true {
+    //           return 5
+    //         } else {
+    //           let a = 1
+    //           return 5
+    //         }
+    //         # DEAD CODE
+    //         let a = 1
+    //       }
+    //     } else if true {
+    //       if true {
+    //         return 5
+    //       } else if true {
+    //         return 5
+    //       } else {
+    //         return 5
+    //       }
+    //       # DEAD CODE
+    //       let a = 1
+    //     } else {
+    //       if true {
+    //         return 5
+    //       } else if true {
+    //         return 5
+    //       } else {
+    //         return 5
+    //       }
+    //       # DEAD CODE
+    //       let a = 1
+    //     }
+    //     # DEAD CODE
+    //     let a = 1
+    //     let b = 1
+    //     let c = 1
+    //     "
+    //       )
+    //   );
 }
 
 #[test]
 fn while_cfg_snapshots() {
-  insta::assert_display_snapshot!(
-    "single while statement",
-    parse_cfg_from_statements(
-      "
-      while true {
-        let a = 1
-      }
-      "
-    )
-  );
+    // insta::assert_display_snapshot!(
+    //   "single while statement",
+    //   parse_cfg_from_statements(
+    //     "
+    //     while true {
+    //       let a = 1
+    //     }
+    //     "
+    //   )
+    // );
 
-  insta::assert_display_snapshot!(
-    "single while statement, trailing statement",
-    parse_cfg_from_statements(
-      "
-      while true {
-        let a = 1
-      }
-      let a = 1
-      let b = 1
-      "
-    )
-  );
+    // insta::assert_display_snapshot!(
+    //   "single while statement, trailing statement",
+    //   parse_cfg_from_statements(
+    //     "
+    //     while true {
+    //       let a = 1
+    //     }
+    //     let a = 1
+    //     let b = 1
+    //     "
+    //   )
+    // );
 
-  insta::assert_display_snapshot!(
-    "single while statement, leading statement",
-    parse_cfg_from_statements(
-      "
-      let a = 1
-      while true {
-        let a = 1
-      }
-      "
-    )
-  );
+    // insta::assert_display_snapshot!(
+    //   "single while statement, leading statement",
+    //   parse_cfg_from_statements(
+    //     "
+    //     let a = 1
+    //     while true {
+    //       let a = 1
+    //     }
+    //     "
+    //   )
+    // );
 }

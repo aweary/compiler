@@ -1,27 +1,31 @@
 ---
 source: parser/tests/cfg_snapshots.rs
-expression: "parse_cfg_from_statements(\"\n    if true {\n      if true {\n        let x = 1\n        if true {\n          if true {\n            let y = 1\n            let z = 1\n            if true {\n              let a = 1\n              let b = 1\n              let c = 1\n            }\n          }\n        }\n      }\n    }\n  \")"
+expression: "parse_cfg_from_statements(\"\n              if true {\n                if true {\n                  let x = 1\n                  if true {\n                    if true {\n                      let y = 1\n                      let z = 1\n                      if true {\n                        let a = 1\n                        let b = 1\n                        let c = 1\n                      }\n                    }\n                  }\n                }\n              }\n            \")"
 ---
 digraph {
     0 [ label = "Entry" ]
     1 [ label = "Exit" ]
-    2 [ label = "BasicBlock(0)" ]
-    3 [ label = "BasicBlock(0)" ]
+    2 [ label = "BranchCondition" ]
+    3 [ label = "BranchCondition" ]
     4 [ label = "BasicBlock(1)" ]
-    5 [ label = "BasicBlock(0)" ]
-    6 [ label = "BasicBlock(2)" ]
-    7 [ label = "BasicBlock(3)" ]
+    5 [ label = "BranchCondition" ]
+    6 [ label = "BranchCondition" ]
+    7 [ label = "BasicBlock(2)" ]
+    8 [ label = "BranchCondition" ]
+    9 [ label = "BasicBlock(3)" ]
     0 -> 2 [ label = "Normal" ]
-    2 -> 3 [ label = "ConditionTrue(2)" ]
-    3 -> 4 [ label = "ConditionTrue(2)" ]
-    4 -> 5 [ label = "ConditionTrue(2)" ]
-    5 -> 6 [ label = "ConditionTrue(2)" ]
-    6 -> 7 [ label = "ConditionTrue(2)" ]
-    7 -> 1 [ label = "Normal" ]
-    2 -> 1 [ label = "ConditionFalse(2)" ]
-    3 -> 1 [ label = "ConditionFalse(2)" ]
-    4 -> 1 [ label = "ConditionFalse(2)" ]
-    5 -> 1 [ label = "ConditionFalse(2)" ]
-    6 -> 1 [ label = "ConditionFalse(2)" ]
+    2 -> 3 [ label = "ConditionTrue" ]
+    3 -> 4 [ label = "ConditionTrue" ]
+    4 -> 5 [ label = "Normal" ]
+    5 -> 6 [ label = "ConditionTrue" ]
+    6 -> 7 [ label = "ConditionTrue" ]
+    7 -> 8 [ label = "Normal" ]
+    8 -> 9 [ label = "ConditionTrue" ]
+    9 -> 1 [ label = "Normal" ]
+    2 -> 1 [ label = "ConditionFalse" ]
+    3 -> 1 [ label = "ConditionFalse" ]
+    5 -> 1 [ label = "ConditionFalse" ]
+    6 -> 1 [ label = "ConditionFalse" ]
+    8 -> 1 [ label = "ConditionFalse" ]
 }
 

@@ -1,7 +1,8 @@
-use crate::control_flow::constrct_cfg_from_block;
+use crate::control_flow::{constrct_cfg_from_block};
 use crate::parser::ParserImpl;
 use common::control_flow_graph::ControlFlowGraph;
 use diagnostics::result::Result;
+use syntax::arena::{StatementId, ExpressionId};
 use syntax::{
     arena::{AstArena, FunctionId},
     visit::Visitor,
@@ -15,7 +16,7 @@ pub fn parse_cfg_from_statements(stmts: &str) -> String {
 
     struct CFGVisitor<'a> {
         ast_arena: &'a AstArena,
-        cfg: Option<ControlFlowGraph<u32>>,
+        cfg: Option<ControlFlowGraph<StatementId, ExpressionId>>,
     }
 
     impl<'a> Visitor for CFGVisitor<'a> {

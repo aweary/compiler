@@ -6,10 +6,12 @@ digraph {
     0 [ label = "Entry" ]
     1 [ label = "Exit" ]
     2 [ label = "BasicBlock(1)" ]
-    3 [ label = "BasicBlock(1)" ]
+    3 [ label = "BranchCondition" ]
+    4 [ label = "BasicBlock(1)" ]
     0 -> 2 [ label = "Normal" ]
-    2 -> 3 [ label = "ConditionTrue(2)" ]
-    3 -> 1 [ label = "Normal" ]
-    2 -> 1 [ label = "ConditionFalse(2)" ]
+    2 -> 3 [ label = "Normal" ]
+    3 -> 4 [ label = "ConditionTrue" ]
+    4 -> 1 [ label = "Normal" ]
+    3 -> 1 [ label = "ConditionFalse" ]
 }
 

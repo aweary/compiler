@@ -1,4 +1,4 @@
-use crate::arena::{self, FunctionId, StatementId};
+use crate::arena::{self, FunctionId, StatementId, ExpressionId};
 use crate::span::Span;
 use common::scope_map::Referant;
 use common::symbol::Symbol;
@@ -330,7 +330,7 @@ pub enum StatementKind {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct If {
     pub span: Span,
-    pub condition: Expression,
+    pub condition: ExpressionId,
     pub body: Block,
     pub alternate: Option<Box<Else>>,
 }
@@ -343,7 +343,7 @@ pub enum Else {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct While {
-    pub condition: Expression,
+    pub condition: ExpressionId,
     pub body: Block,
 }
 

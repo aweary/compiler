@@ -581,52 +581,52 @@ fn cfg_test() {
         )
     );
 
-    insta::assert_display_snapshot!(
-        "multiple if/else-if statements",
-        parse_cfg_from_statements(
-            "
-          if true {
-            let a = 1
-          } else if true {
-            let a = 1
-            let b = 2
-          }
-          if true {
-            let a = 1
-            let b = 2
-            let c = 3
-          } else if true {
-            let a = 1
-            let b = 2
-            let c = 3
-            let d = 4
-          } else {
-            let a = 1
-            let b = 2
-            let c = 3
-            let d = 4
-            let e = 5
-          }
-          let a = 1
-          if true {
-            let a = 1
-            let b = 2
-            let c = 3
-          } else if true {
-            let a = 1
-            let b = 2
-            let c = 3
-            let d = 4
-          } else {
-            let a = 1
-            let b = 2
-            let c = 3
-            let d = 4
-            let e = 5
-          }
-          "
-        )
-    );
+    // insta::assert_display_snapshot!(
+    //     "multiple if/else-if statements",
+    //     parse_cfg_from_statements(
+    //         "
+    //       if true {
+    //         let a = 1
+    //       } else if true {
+    //         let a = 1
+    //         let b = 2
+    //       }
+    //       if true {
+    //         let a = 1
+    //         let b = 2
+    //         let c = 3
+    //       } else if true {
+    //         let a = 1
+    //         let b = 2
+    //         let c = 3
+    //         let d = 4
+    //       } else {
+    //         let a = 1
+    //         let b = 2
+    //         let c = 3
+    //         let d = 4
+    //         let e = 5
+    //       }
+    //       let a = 1
+    //       if true {
+    //         let a = 1
+    //         let b = 2
+    //         let c = 3
+    //       } else if true {
+    //         let a = 1
+    //         let b = 2
+    //         let c = 3
+    //         let d = 4
+    //       } else {
+    //         let a = 1
+    //         let b = 2
+    //         let c = 3
+    //         let d = 4
+    //         let e = 5
+    //       }
+    //       "
+    //     )
+    // );
 
     //   insta::assert_display_snapshot!(
     //       "nested if/else-if statements",

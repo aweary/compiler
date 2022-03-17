@@ -1,4 +1,5 @@
 use diagnostics::result::Result;
+use log::debug;
 use std::{
     collections::{HashMap, HashSet},
     ops::Deref,
@@ -10,7 +11,7 @@ use syntax::{
 };
 
 use common::control_flow_graph::{
-    BasicBlock, BlockIndex, ControlFlowEdge, ControlFlowGraph, ControlFlowNode,
+    BasicBlock, BlockIndex, ControlFlowEdge, ControlFlowGraph, ControlFlowNode, PartialEdge,
 };
 
 pub struct ControlFlowAnalysis<'a, T, E> {
@@ -55,6 +56,7 @@ pub fn constrct_cfg_from_block(
     block: &Block,
     ast: &AstArena,
 ) -> ControlFlowGraph<StatementId, ExpressionId> {
+    debug!("constrct_cfg_from_block:start");
     let mut loop_indicies = HashSet::<BlockIndex>::default();
 
     let mut cfg = ControlFlowGraph::default();
@@ -87,11 +89,25 @@ pub fn constrct_cfg_from_block(
                     basic_block = BasicBlock::new();
                 },
                 StatementKind::If(if_) => {
-
                     if !basic_block.is_empty() {
                         cfg.add_block(basic_block);
                         basic_block = BasicBlock::new();
                     }
+
+                    // The edge queue here should be flushed to the NEW entry node
+                    // for the consumed if statement.
+                    debug!("edge_queue before if: {:?}", cfg.edge_queue);
+                    debug!("last_index before if: {:?}", cfg.last_index());
+
+                    // There may have been previous edges in the queue that need to be flushed.
+                    // For example, an if statement followed by another if statement will have a ConditionFalse
+                    // edge from BranchCondition and Normal edge from the body of the statement.
+                    // Those should point to the *next* node, which in this case will be the BranchCondition
+                    // of this if statement we're consuming.
+
+                    let mut edge_queue = cfg.edge_queue.clone();
+                    cfg.edge_queue.clear();
+
 
                     let if_cfg = construct_cfg_from_if(if_,  ast);
 
@@ -101,14 +117,15 @@ pub fn constrct_cfg_from_block(
                         cfg.set_has_early_return(true);
                     }
 
-                    println!("if_cfg");
-                    if_cfg.print();
-                    cfg.print();
+                    let consumed_subgraph_entry_index = cfg.consume_subgraph(if_cfg, None, cfg.last_index());
 
-                    cfg.consume_subgraph(if_cfg, None, cfg.last_index());
-                    println!("AFTER");
-                    cfg.print();
+                    while let Some(PartialEdge { source, edge }) = edge_queue.pop_front() {
+                        cfg.add_edge(source, consumed_subgraph_entry_index, edge);
+                    }
 
+                    debug!("edge queue after if: {:?}\n", cfg.edge_queue);
+                    debug!("consumed_subgraph_entry_index: {:?}", consumed_subgraph_entry_index);
+                    cfg.print();
                 }
 
                 StatementKind::While(while_) => {
@@ -170,6 +187,7 @@ pub fn constrct_cfg_from_block(
 
     cfg.flush_edge_queue(cfg.exit_index());
 
+    debug!("constrct_cfg_from_block:end\n");
     cfg
 }
 
@@ -177,6 +195,7 @@ pub fn construct_cfg_from_if(
     if_: &If,
     ast: &AstArena,
 ) -> ControlFlowGraph<StatementId, ExpressionId> {
+    debug!("construct_cfg_from_if:start");
     let mut cfg = ControlFlowGraph::default();
 
     let branch_condition_index = cfg.add_branch_condition(if_.condition);
@@ -202,9 +221,6 @@ pub fn construct_cfg_from_if(
                 let else_cfg = constrct_cfg_from_block(else_block, ast);
                 let else_cfg_has_early_return = else_cfg.has_early_return();
 
-                println!("else_cfg");
-                else_cfg.print();
-
                 cfg.consume_subgraph(else_cfg, Some(false_edge), branch_condition_index);
 
                 if if_true_cfg_has_early_return && else_cfg_has_early_return {
@@ -215,9 +231,6 @@ pub fn construct_cfg_from_if(
             }
             Else::If(_if) => {
                 let else_if_cfg = construct_cfg_from_if(_if, ast);
-                println!("else_if");
-                else_if_cfg.print();
-                cfg.print();
                 let else_if_cfg_has_early_return = else_if_cfg.has_early_return();
 
                 // cfg.add_edge(last_index, branch_condition_index, false_edge);
@@ -237,5 +250,6 @@ pub fn construct_cfg_from_if(
     if !cfg.has_early_return() {
         cfg.flush_edge_queue(cfg.exit_index());
     }
+    debug!("construct_cfg_from_if:end\n");
     cfg
 }

@@ -1,6 +1,9 @@
 use std::sync::Arc;
 
-use crate::{arena::FunctionId, ast::*};
+use crate::{
+    arena::{with_mut_function, FunctionId},
+    ast::*,
+};
 use diagnostics::result::Result;
 
 pub trait Visitor: Sized {
@@ -24,7 +27,10 @@ pub trait Visitor: Sized {
         Ok(())
     }
 
-    fn visit_function(&mut self, _function: &mut FunctionId) -> Result<()> {
+    fn visit_function(&mut self, function_id: &mut FunctionId) -> Result<()> {
+        with_mut_function(*function_id, |function| {
+            walk_function(self, function).unwrap()
+        });
         Ok(())
     }
 
@@ -38,7 +44,7 @@ pub trait Visitor: Sized {
 }
 
 pub fn walk_function(_visitor: &mut impl Visitor, _function: &mut Function) -> Result<()> {
-    Ok(())
+ Ok(())
 }
 
 pub fn walk_module(visitor: &mut impl Visitor, module: &mut Module) -> Result<()> {

@@ -4,9 +4,15 @@ use common::scope_map::Referant;
 use common::symbol::Symbol;
 use diagnostics::result::Result;
 
-use id_arena::Id;
+use id_arena::{Arena, Id};
 
 use std::sync::Arc;
+
+pub struct AstContext {
+    expressions: Arena<Expression>,
+    functions: Arena<Function>,
+    statements: Arena<Statement>,
+}
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct UniqueName(u32);
@@ -306,6 +312,13 @@ pub enum BinOp {
     BinOr,
     BinAnd,
 }
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Value {
+    Boolean(bool),
+    Number(u32),
+}
+
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Expression {

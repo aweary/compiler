@@ -581,180 +581,181 @@ fn cfg_test() {
         )
     );
 
-    // insta::assert_display_snapshot!(
-    //     "multiple if/else-if statements",
-    //     parse_cfg_from_statements(
-    //         "
-    //       if true {
-    //         let a = 1
-    //       } else if true {
-    //         let a = 1
-    //         let b = 2
-    //       }
-    //       if true {
-    //         let a = 1
-    //         let b = 2
-    //         let c = 3
-    //       } else if true {
-    //         let a = 1
-    //         let b = 2
-    //         let c = 3
-    //         let d = 4
-    //       } else {
-    //         let a = 1
-    //         let b = 2
-    //         let c = 3
-    //         let d = 4
-    //         let e = 5
-    //       }
-    //       let a = 1
-    //       if true {
-    //         let a = 1
-    //         let b = 2
-    //         let c = 3
-    //       } else if true {
-    //         let a = 1
-    //         let b = 2
-    //         let c = 3
-    //         let d = 4
-    //       } else {
-    //         let a = 1
-    //         let b = 2
-    //         let c = 3
-    //         let d = 4
-    //         let e = 5
-    //       }
-    //       "
-    //     )
-    // );
+    insta::assert_display_snapshot!(
+        "multiple if/else-if statements",
+        parse_cfg_from_statements(
+            "
+          if true {
+            let a = 1
+          } else if true {
+            let a = 1
+            let b = 2
+          }
+          if true {
+            let a = 1
+            let b = 2
+            let c = 3
+          } else if true {
+            let a = 1
+            let b = 2
+            let c = 3
+            let d = 4
+          } else {
+            let a = 1
+            let b = 2
+            let c = 3
+            let d = 4
+            let e = 5
+          }
+          let a = 1
+          if true {
+            let a = 1
+            let b = 2
+            let c = 3
+          } else if true {
+            let a = 1
+            let b = 2
+            let c = 3
+            let d = 4
+          } else {
+            let a = 1
+            let b = 2
+            let c = 3
+            let d = 4
+            let e = 5
+          }
+          "
+        )
+    );
 
-    //   insta::assert_display_snapshot!(
-    //       "nested if/else-if statements",
-    //       parse_cfg_from_statements(
-    //           "
-    //     if true {
-    //       let a = 1
-    //       if true {
-    //         let a = 1
-    //         let b = 2
-    //       } else if true {
-    //         let a = 1
-    //         let b = 2
-    //         let c = 3
-    //       }
-    //     } else if true {
-    //       let a = 1
-    //       let b = 2
-    //       let c = 3
-    //       let d = 4
-    //       if true {
-    //         let a = 1
-    //       } else {
-    //         let c = 2
-    //       }
-    //     } else {
-    //       if true {
-    //         let a = 1
-    //       } else if true {
-    //         let b = 1
-    //         let c = 2
-    //       }
-    //       let a = 1
-    //       let b = 2
-    //       let c = 3
-    //       let d = 4
-    //       let e = 5
-    //     }
-    //     "
-    //       )
-    //   );
+      insta::assert_display_snapshot!(
+          "nested if/else-if statements",
+          parse_cfg_from_statements(
+              "
+        if true {
+          let a = 1
+          if true {
+            let a = 1
+            let b = 2
+          } else if true {
+            let a = 1
+            let b = 2
+            let c = 3
+          }
+        } else if true {
+          let a = 1
+          let b = 2
+          let c = 3
+          let d = 4
+          if true {
+            let a = 1
+          } else {
+            let c = 2
+          }
+        } else {
+          if true {
+            let a = 1
+          } else if true {
+            let b = 1
+            let c = 2
+          }
+          let a = 1
+          let b = 2
+          let c = 3
+          let d = 4
+          let e = 5
+        }
+        "
+          )
+      );
 
-    //   insta::assert_display_snapshot!(
-    //       "nested if/else-if statements, early return (dead code)",
-    //       parse_cfg_from_statements(
-    //           "
-    //     if true {
-    //       if true {
-    //         return 5
-    //       } else if true {
-    //         return 5
-    //       } else {
-    //         if true {
-    //           return 5
-    //         } else if true {
-    //           return 5
-    //         } else {
-    //           let a = 1
-    //           return 5
-    //         }
-    //         # DEAD CODE
-    //         let a = 1
-    //       }
-    //     } else if true {
-    //       if true {
-    //         return 5
-    //       } else if true {
-    //         return 5
-    //       } else {
-    //         return 5
-    //       }
-    //       # DEAD CODE
-    //       let a = 1
-    //     } else {
-    //       if true {
-    //         return 5
-    //       } else if true {
-    //         return 5
-    //       } else {
-    //         return 5
-    //       }
-    //       # DEAD CODE
-    //       let a = 1
-    //     }
-    //     # DEAD CODE
-    //     let a = 1
-    //     let b = 1
-    //     let c = 1
-    //     "
-    //       )
-    //   );
+      insta::assert_display_snapshot!(
+          "nested if/else-if statements, early return (dead code)",
+          parse_cfg_from_statements(
+              "
+        if true {
+          if true {
+            return 5
+          } else if true {
+            return 5
+          } else {
+            if true {
+              return 5
+            } else if true {
+              return 5
+            } else {
+              let a = 1
+              return 5
+            }
+            # DEAD CODE
+            let a = 1
+          }
+        } else if true {
+          if true {
+            return 5
+          } else if true {
+            return 5
+          } else {
+            return 5
+          }
+          # DEAD CODE
+          let a = 1
+        } else {
+          if true {
+            return 5
+          } else if true {
+            return 5
+          } else {
+            return 5
+          }
+          # DEAD CODE
+          let a = 1
+        }
+        # DEAD CODE
+        let a = 1
+        let b = 1
+        let c = 1
+        "
+          )
+      );
 }
 
 #[test]
 fn while_cfg_snapshots() {
-    // insta::assert_display_snapshot!(
-    //   "single while statement",
-    //   parse_cfg_from_statements(
-    //     "
-    //     while true {
-    //       let a = 1
-    //     }
-    //     "
-    //   )
-    // );
+    insta::assert_display_snapshot!(
+      "single while statement",
+      parse_cfg_from_statements(
+        "
+        while true {
+          let a = 1
+        }
+        "
+      )
+    );
 
-    // insta::assert_display_snapshot!(
-    //   "single while statement, trailing statement",
-    //   parse_cfg_from_statements(
-    //     "
-    //     while true {
-    //       let a = 1
-    //     }
-    //     let a = 1
-    //     let b = 1
-    //     "
-    //   )
-    // );
+    insta::assert_display_snapshot!(
+      "single while statement, trailing statement",
+      parse_cfg_from_statements(
+        "
+        while true {
+          let a = 1
+        }
+        let a = 1
+        let b = 1
+        "
+      )
+    );
 
-    // insta::assert_display_snapshot!(
-    //   "single while statement, leading statement",
-    //   parse_cfg_from_statements(
-    //     "
-    //     let a = 1
-    //     while true {
-    //       let a = 1
-    //     }
-    //     "
-    //   )
-    // );
+    insta::assert_display_snapshot!(
+      "single while statement, leading statement",
+      parse_cfg_from_statements(
+        "
+        let a = 1
+        let a = 1
+        while true {
+          let a = 1
+        }
+        "
+      )
+    );
 }

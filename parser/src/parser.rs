@@ -1,9 +1,10 @@
 use core::panic;
 use diagnostics::result::Result;
 use lexer::Lexer;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::vec;
-use std::{path::PathBuf};
+use syntax::arena::{alloc_expression, alloc_function, with_mut_function};
 use syntax::{
     arena::{AstArena, FunctionId, StatementId},
     ast::*,
@@ -12,11 +13,11 @@ use syntax::{
 };
 use vfs::FileSystem;
 
-use types::Type;
-use log::debug;
+use crate::control_flow::ControlFlowAnalysis;
 use common::scope_map::ScopeMap;
 use common::symbol::Symbol;
-use crate::control_flow::ControlFlowAnalysis;
+use log::debug;
+use types::Type;
 
 #[salsa::query_group(ParserDatabase)]
 pub trait Parser: FileSystem {
@@ -29,9 +30,9 @@ fn parse(db: &dyn Parser, path: PathBuf) -> Result<Module> {
     let mut ast_arena = AstArena::default();
     let parser = ParserImpl::new(&source, &mut ast_arena);
     let mut module = parser.parse_module()?;
-    let mut cfg_analysis = ControlFlowAnalysis::new(&mut ast_arena);
-    cfg_analysis.visit_module(&mut module)?;
-    let _cfg_map = cfg_analysis.finish();
+    // let mut cfg_analysis = ControlFlowAnalysis::new(&mut ast_arena);
+    // cfg_analysis.visit_module(&mut module)?;
+    // let cfg_map = cfg_analysis.finish();
     Ok(module)
 }
 
@@ -244,7 +245,7 @@ impl<'s> ParserImpl<'s> {
                 self.eat(TokenKind::Async)?;
                 match self.peek()?.kind {
                     TokenKind::Fn => {
-                        let function = self.function(true)?;
+                        let function = self.parse_function(true)?;
                         DefinitionKind::Function(function)
                         // ...
                     }
@@ -265,7 +266,7 @@ impl<'s> ParserImpl<'s> {
                 }
             }
             TokenKind::Fn => {
-                let function = self.function(false)?;
+                let function = self.parse_function(false)?;
                 DefinitionKind::Function(function)
             }
             TokenKind::Component => {
@@ -1093,9 +1094,10 @@ impl<'s> ParserImpl<'s> {
             None
         };
         let span = self.span.merge(span);
+        let condition = alloc_expression(condition);
         let if_ = If {
             span,
-            condition: self.ast_arena.expressions.alloc(condition),
+            condition,
             body,
             alternate,
         };
@@ -1156,7 +1158,7 @@ impl<'s> ParserImpl<'s> {
         Ok(annotations)
     }
 
-    fn function(&mut self, is_async: bool) -> Result<FunctionId> {
+    fn parse_function(&mut self, is_async: bool) -> Result<FunctionId> {
         let prev_is_async_context = self.is_async_context;
         self.is_async_context = is_async;
         self.expect(TokenKind::Fn)?;
@@ -1179,13 +1181,16 @@ impl<'s> ParserImpl<'s> {
         };
 
         let function_id = self.ast_arena.functions.alloc(function);
+
         self.scope_map
             .define(symbol, Binding::Function(function_id));
 
         self.reference_tracker.insert(function_id);
 
         let body = self.block()?;
+
         self.ast_arena.functions.get_mut(function_id).unwrap().body = Some(body);
+
         self.scope_map.pop();
         self.is_async_context = prev_is_async_context;
 

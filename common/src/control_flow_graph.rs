@@ -1,6 +1,7 @@
 use log::debug;
 use petgraph::dot::Dot;
 use petgraph::graph::{DiGraph, NodeIndex};
+use petgraph::visit::{ControlFlow, DfsEvent, IntoNodeReferences};
 use std::collections::{HashMap, VecDeque};
 use std::fmt::Debug;
 
@@ -72,8 +73,21 @@ impl<T> BasicBlock<T> {
     }
 }
 
+pub fn walk_control_flow_graph<T, E, F, C>(
+    graph: &DiGraph<ControlFlowNode<T, E>, ControlFlowEdge>,
+    entry: BlockIndex,
+    f: F,
+) where
+    F: FnMut(DfsEvent<NodeIndex>) -> C,
+    C: ControlFlow,
+{
+    // use petgraph::algo::dominators::simple_fast;
+    use petgraph::visit::depth_first_search;
+    depth_first_search(graph, Some(entry.0), f);
+}
+
 pub struct ControlFlowGraph<T, E> {
-    graph: DiGraph<ControlFlowNode<T, E>, ControlFlowEdge>,
+    pub graph: DiGraph<ControlFlowNode<T, E>, ControlFlowEdge>,
     pub edge_queue: VecDeque<PartialEdge>,
     has_early_return: bool,
     entry_index: BlockIndex,
@@ -129,10 +143,8 @@ where
         other: Self,
         entry_edge: Option<ControlFlowEdge>,
         entry_index: BlockIndex,
-    ) -> BlockIndex {
-        debug!("consume_subgraph");
-        debug!("edge queue when consuming: {:?}", self.edge_queue);
-
+        flush_edge_queue: bool,
+    ) {
         let other_has_early_return = other.has_early_return();
         let mut edges_to_enqueue: Vec<PartialEdge> = vec![];
 
@@ -142,7 +154,6 @@ where
 
         let other_entry_index = other.entry_index;
         let other_exit_index = other.exit_index;
-        let mut new_subgraph_entry_index: Option<BlockIndex> = None;
 
         let mut node_index_hash_map: HashMap<NodeIndex, NodeIndex> = HashMap::new();
 
@@ -168,9 +179,14 @@ where
                 }
 
                 if let Some(other_first_index) = other.first_index {
-                    if other_first_index.0 == other_node_index {
-                        // This is the first node of the other subgraph,
-                        new_subgraph_entry_index = Some(block_index);
+                    if other_first_index.0 == other_node_index && flush_edge_queue {
+                        // There may have been previous edges in the queue that need to be flushed.
+                        // For example, an if statement followed by another if statement will have a ConditionFalse
+                        // edge from BranchCondition and Normal edge from the body of the statement.
+                        // Those should point to the *next* node, which in this case will be the BranchCondition
+                        while let Some(PartialEdge { source, edge }) = self.edge_queue.pop_front() {
+                            self.add_edge(source, block_index, edge);
+                        }
                     }
                 }
             }
@@ -225,14 +241,18 @@ where
             };
 
             // Now we can add the edge to the graph
-            self.graph.add_edge(source_index, target_index, edge_weight);
+            self.add_edge(
+                BlockIndex(source_index),
+                BlockIndex(target_index),
+                edge_weight,
+            );
         }
         if !other_has_early_return {
             for PartialEdge { source, edge } in edges_to_enqueue {
                 self.enqueue_edge(source, edge);
             }
         }
-        new_subgraph_entry_index.unwrap()
+        // new_subgraph_entry_index.unwrap()
     }
 
     pub fn entry_index(&self) -> BlockIndex {
@@ -268,7 +288,6 @@ where
     }
 
     pub fn add_block(&mut self, block: BasicBlock<T>) -> BlockIndex {
-        println!("edge_queue in add_block, {:?}", self.edge_queue);
         let index = BlockIndex(self.graph.add_node(ControlFlowNode::BasicBlock(block)));
         self.add_block_index(index);
         self.flush_edge_queue(index);
@@ -276,7 +295,6 @@ where
     }
 
     pub fn add_branch_condition(&mut self, condition: E) -> BlockIndex {
-        println!("edge_queue in add_branch_condition, {:?}", self.edge_queue);
         let index = BlockIndex(
             self.graph
                 .add_node(ControlFlowNode::BranchCondition(condition)),
@@ -285,8 +303,16 @@ where
         index
     }
 
+    pub fn add_loop_condition(&mut self, condition: E) -> BlockIndex {
+        let index = BlockIndex(
+            self.graph
+                .add_node(ControlFlowNode::LoopCondition(condition)),
+        );
+        self.add_block_index(index);
+        index
+    }
+
     pub fn flush_edge_queue(&mut self, target: BlockIndex) {
-        debug!("flush_edge_queue, target: {:?}", target);
         while let Some(PartialEdge { source, edge }) = self.edge_queue.pop_front() {
             self.add_edge(source, target, edge);
         }

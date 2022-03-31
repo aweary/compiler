@@ -265,6 +265,7 @@ dependencies = [
 name = "codegen"
 version = "0.1.0"
 dependencies = [
+ "common",
  "diagnostics",
  "petgraph",
  "syntax",
@@ -1030,6 +1031,7 @@ dependencies = [
 name = "parser"
 version = "0.1.0"
 dependencies = [
+ "codegen",
  "common",
  "diagnostics",
  "edit-distance",

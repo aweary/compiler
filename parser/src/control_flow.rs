@@ -1,53 +1,51 @@
 use diagnostics::result::Result;
 use log::debug;
+use std::cell::RefCell;
 use std::{
     collections::{HashMap, HashSet},
     ops::Deref,
 };
-use syntax::{
-    arena::{AstArena, ExpressionId, FunctionId, StatementId},
-    ast::*,
-    visit::Visitor,
-};
+use syntax::ast_::*;
+use syntax::visit_::Visitor;
 
 use common::control_flow_graph::{
-    BasicBlock, BlockIndex, ControlFlowEdge, ControlFlowGraph, ControlFlowNode, PartialEdge,
+    walk_control_flow_graph, BasicBlock, BlockIndex, ControlFlowEdge, ControlFlowGraph,
 };
 
 pub struct ControlFlowAnalysis<'a, T, E> {
     ast: &'a mut AstArena,
-    cfg_map: HashMap<FunctionId, ControlFlowGraph<T, E>>,
+    cfg_map: RefCell<HashMap<FunctionId, ControlFlowGraph<T, E>>>,
 }
 
 impl<'a, T, E> ControlFlowAnalysis<'a, T, E> {
     pub fn new(ast: &'a mut AstArena) -> Self {
         Self {
             ast,
-            cfg_map: HashMap::default(),
+            cfg_map: RefCell::new(HashMap::default()),
         }
     }
 
     pub fn finish(self) -> HashMap<FunctionId, ControlFlowGraph<T, E>> {
-        self.cfg_map
+        self.cfg_map.into_inner()
     }
 }
 
 impl<'a> Visitor for ControlFlowAnalysis<'a, StatementId, ExpressionId> {
-    fn visit_function(&mut self, function_id: &mut FunctionId) -> Result<()> {
-        let function = self.ast.functions.get(*function_id).unwrap();
-        let body = function.body.as_ref().unwrap();
-        let cfg = constrct_cfg_from_block(body, &self.ast);
+    fn context_mut(&mut self) -> &mut AstArena {
+        &mut self.ast
+    }
 
-        cfg.print();
+    fn context(&self) -> &AstArena {
+        &self.ast
+    }
 
-        let unreachable_block_indicies = cfg.find_unreachable_blocks();
-
-        let _unreachable: Vec<Option<&BasicBlock<StatementId>>> = unreachable_block_indicies
-            .iter()
-            .map(|block_index| cfg.get_block(*block_index))
-            .collect();
-
-        self.cfg_map.insert(*function_id, cfg);
+    fn visit_function(&self, function_id: FunctionId) -> Result<()> {
+        let arena = self.context();
+        let function = arena.functions.get(function_id).unwrap();
+        let function = function.borrow();
+        let body = arena.blocks.get(function.body).unwrap();
+        let cfg = constrct_cfg_from_block(body, arena);
+        self.cfg_map.borrow_mut().insert(function_id, cfg);
         Ok(())
     }
 }
@@ -60,119 +58,148 @@ pub fn constrct_cfg_from_block(
     let mut loop_indicies = HashSet::<BlockIndex>::default();
 
     let mut cfg = ControlFlowGraph::default();
-    let mut entry_block_index: Option<BlockIndex> = None;
     let mut basic_block = BasicBlock::new();
     for statement_id in &block.statements {
         let statement = ast.statements.get(*statement_id).unwrap();
-        match &statement.kind {
-                // Non control-flow related statements, add to the currentf basic block
-                StatementKind::Let(_)
-                | StatementKind::State( _)
-                | StatementKind::Expression(_) => {
-                    basic_block.statements.push(
-                        *statement_id
-                    );
-                }
-                // Control flow
-                StatementKind::Return(_) => {
-                    cfg.set_has_early_return(true);
-                    basic_block.statements.push(
-                        *statement_id
-                    );
 
-                    let block_index = cfg.add_block(basic_block);
-                    if entry_block_index.is_none() {
-                        entry_block_index = Some(block_index);
-                    }
-
-                    cfg.add_edge_to_exit(block_index,  ControlFlowEdge::Return);
-                    basic_block = BasicBlock::new();
-                },
-                StatementKind::If(if_) => {
-                    if !basic_block.is_empty() {
-                        cfg.add_block(basic_block);
-                        basic_block = BasicBlock::new();
-                    }
-
-                    // The edge queue here should be flushed to the NEW entry node
-                    // for the consumed if statement.
-                    debug!("edge_queue before if: {:?}", cfg.edge_queue);
-                    debug!("last_index before if: {:?}", cfg.last_index());
-
-                    // There may have been previous edges in the queue that need to be flushed.
-                    // For example, an if statement followed by another if statement will have a ConditionFalse
-                    // edge from BranchCondition and Normal edge from the body of the statement.
-                    // Those should point to the *next* node, which in this case will be the BranchCondition
-                    // of this if statement we're consuming.
-
-                    let mut edge_queue = cfg.edge_queue.clone();
-                    cfg.edge_queue.clear();
-
-
-                    let if_cfg = construct_cfg_from_if(if_,  ast);
-
-                    let if_cfg_has_early_return = if_cfg.has_early_return();
-
-                    if if_cfg_has_early_return {
-                        cfg.set_has_early_return(true);
-                    }
-
-                    let consumed_subgraph_entry_index = cfg.consume_subgraph(if_cfg, None, cfg.last_index());
-
-                    while let Some(PartialEdge { source, edge }) = edge_queue.pop_front() {
-                        cfg.add_edge(source, consumed_subgraph_entry_index, edge);
-                    }
-
-                    debug!("edge queue after if: {:?}\n", cfg.edge_queue);
-                    debug!("consumed_subgraph_entry_index: {:?}", consumed_subgraph_entry_index);
-                    cfg.print();
-                }
-
-                StatementKind::While(while_) => {
-                    let block_index = cfg.add_block(basic_block);
-
-                    let mut while_body_cfg = constrct_cfg_from_block(&while_.body, ast);
-                    let while_body_has_early_return = while_body_cfg.has_early_return();
-
-                    // Delete the normal flow edge from the last block to the exit node
-                    while_body_cfg.delete_normal_edge(
-                        while_body_cfg.last_index(),
-                        while_body_cfg.exit_index(),
-                    );
-
-                    let true_edge = ControlFlowEdge::ConditionTrue;
-                    let false_edge = ControlFlowEdge::ConditionFalse;
-
-                    cfg.consume_subgraph(while_body_cfg, Some(true_edge), block_index);
-
-                    loop_indicies.insert(cfg.last_index());
-
-                    if !while_body_has_early_return {
-                      cfg.add_edge(cfg.last_index(), block_index, ControlFlowEdge::Normal);
-                    }
-
-                    cfg.enqueue_edge(block_index, false_edge);
-
-
-                    // // let while_cfg = construct_cfg_from_while(while_, ast, &2);
-
-                    // let while_cfg_has_early_return = while_cfg.has_early_return();
-
-                    // if while_cfg_has_early_return {
-                    //     cfg.set_has_early_return(true);
-                    // }
-
-                    // cfg.consume_subgraph(while_cfg, Some(block_index), block_index);
-
-                    basic_block = BasicBlock::new();
-                }
-
-                _ => {
-                    // Do nothing for now...
-                }
-                // StatementKind::While(_) => todo!(),
-                // StatementKind::For(_) => todo!(),
+        match statement {
+            Statement::Let { .. } | Statement::Expression(_) => {
+                basic_block.statements.push(*statement_id);
             }
+            Statement::Return(_) => {
+                cfg.set_has_early_return(true);
+                basic_block.statements.push(*statement_id);
+                let block_index = cfg.add_block(basic_block);
+                cfg.add_edge_to_exit(block_index, ControlFlowEdge::Return);
+                basic_block = BasicBlock::new();
+            }
+            Statement::If(if_) => {
+                if !basic_block.is_empty() {
+                    cfg.add_block(basic_block);
+                    basic_block = BasicBlock::new();
+                }
+                // The edge queue here should be flushed to the NEW entry node
+                // for the consumed if statement.
+                debug!("edge_queue before if: {:?}", cfg.edge_queue);
+                debug!("last_index before if: {:?}", cfg.last_index());
+
+                let if_cfg = construct_cfg_from_if(if_, ast);
+
+                let if_cfg_has_early_return = if_cfg.has_early_return();
+
+                if if_cfg_has_early_return {
+                    cfg.set_has_early_return(true);
+                }
+                cfg.consume_subgraph(if_cfg, None, cfg.last_index(), true);
+            }
+            Statement::While { condition, body } => {
+                if !basic_block.is_empty() {
+                    cfg.add_block(basic_block);
+                    basic_block = BasicBlock::new();
+                }
+
+                let last_index = cfg.last_index();
+                let loop_condition_index = cfg.add_loop_condition(*condition);
+                cfg.add_edge(last_index, loop_condition_index, ControlFlowEdge::Normal);
+
+                let body = ast.blocks.get(*body).unwrap();
+                let mut while_body_cfg = constrct_cfg_from_block(body, ast);
+                let while_body_has_early_return = while_body_cfg.has_early_return();
+
+                // Delete the normal flow edge from the last block to the exit node
+                while_body_cfg
+                    .delete_normal_edge(while_body_cfg.last_index(), while_body_cfg.exit_index());
+
+                let true_edge = ControlFlowEdge::ConditionTrue;
+                let false_edge = ControlFlowEdge::ConditionFalse;
+
+                cfg.consume_subgraph(while_body_cfg, Some(true_edge), loop_condition_index, true);
+
+                loop_indicies.insert(cfg.last_index());
+
+                if !while_body_has_early_return {
+                    cfg.add_edge(
+                        cfg.last_index(),
+                        loop_condition_index,
+                        ControlFlowEdge::Normal,
+                    );
+                }
+
+                cfg.enqueue_edge(loop_condition_index, false_edge);
+            }
+        }
+
+        // match &statement.kind {
+        //     StatementKind::Let(_) | StatementKind::State(_) | StatementKind::Expression(_) => {
+        //         basic_block.statements.push(*statement_id);
+        //     }
+        //     StatementKind::Return(_) => {
+        //         cfg.set_has_early_return(true);
+        //         basic_block.statements.push(*statement_id);
+        //         let block_index = cfg.add_block(basic_block);
+        //         cfg.add_edge_to_exit(block_index, ControlFlowEdge::Return);
+        //         basic_block = BasicBlock::new();
+        //     }
+        //     StatementKind::If(if_) => {
+        //         if !basic_block.is_empty() {
+        //             cfg.add_block(basic_block);
+        //             basic_block = BasicBlock::new();
+        //         }
+
+        //         // The edge queue here should be flushed to the NEW entry node
+        //         // for the consumed if statement.
+        //         debug!("edge_queue before if: {:?}", cfg.edge_queue);
+        //         debug!("last_index before if: {:?}", cfg.last_index());
+
+        //         let if_cfg = construct_cfg_from_if(if_, ast);
+
+        //         let if_cfg_has_early_return = if_cfg.has_early_return();
+
+        //         if if_cfg_has_early_return {
+        //             cfg.set_has_early_return(true);
+        //         }
+
+        //         cfg.consume_subgraph(if_cfg, None, cfg.last_index(), true);
+        //     }
+
+        //     StatementKind::While(while_) => {
+        //         if !basic_block.is_empty() {
+        //             cfg.add_block(basic_block);
+        //             basic_block = BasicBlock::new();
+        //         }
+
+        //         let last_index = cfg.last_index();
+        //         let loop_condition_index = cfg.add_loop_condition(while_.condition);
+        //         cfg.add_edge(last_index, loop_condition_index, ControlFlowEdge::Normal);
+
+        //         let mut while_body_cfg = constrct_cfg_from_block(&while_.body, ast);
+        //         let while_body_has_early_return = while_body_cfg.has_early_return();
+
+        //         // Delete the normal flow edge from the last block to the exit node
+        //         while_body_cfg
+        //             .delete_normal_edge(while_body_cfg.last_index(), while_body_cfg.exit_index());
+
+        //         let true_edge = ControlFlowEdge::ConditionTrue;
+        //         let false_edge = ControlFlowEdge::ConditionFalse;
+
+        //         cfg.consume_subgraph(while_body_cfg, Some(true_edge), loop_condition_index, true);
+
+        //         loop_indicies.insert(cfg.last_index());
+
+        //         if !while_body_has_early_return {
+        //             cfg.add_edge(
+        //                 cfg.last_index(),
+        //                 loop_condition_index,
+        //                 ControlFlowEdge::Normal,
+        //             );
+        //         }
+
+        //         cfg.enqueue_edge(loop_condition_index, false_edge);
+        //     }
+        //     _ => {
+        //         // Do nothing for now...
+        //     } // StatementKind::For(_) => todo!(),
+        // }
     }
 
     if !basic_block.is_empty() {
@@ -196,6 +223,18 @@ pub fn construct_cfg_from_if(
     ast: &AstArena,
 ) -> ControlFlowGraph<StatementId, ExpressionId> {
     debug!("construct_cfg_from_if:start");
+
+    // Check to see if we can statically exclude this branching
+    if let Expression::Boolean(should_run_branch) =
+        *ast.expressions.get(if_.condition).unwrap().borrow()
+    {
+        println!("Branch with a known outcome: {}", should_run_branch);
+        if should_run_branch {
+            let body = ast.blocks.get(if_.body).unwrap();
+            return constrct_cfg_from_block(body, ast);
+        }
+    }
+
     let mut cfg = ControlFlowGraph::default();
 
     let branch_condition_index = cfg.add_branch_condition(if_.condition);
@@ -207,21 +246,24 @@ pub fn construct_cfg_from_if(
         body, alternate, ..
     } = if_;
 
+    let body = ast.blocks.get(*body).unwrap();
+
     // The block for the `true` branch of the if statement
     let if_true_cfg = constrct_cfg_from_block(body, ast);
 
     // Whether the `true` branch of the if statement has an early return
     let if_true_cfg_has_early_return = if_true_cfg.has_early_return();
 
-    cfg.consume_subgraph(if_true_cfg, Some(true_edge), branch_condition_index);
+    cfg.consume_subgraph(if_true_cfg, Some(true_edge), branch_condition_index, false);
 
     if let Some(ref else_) = alternate {
         match else_.deref() {
-            Else::Block(else_block) => {
+            Else::Block(else_block_id) => {
+                let else_block = ast.blocks.get(*else_block_id).unwrap();
                 let else_cfg = constrct_cfg_from_block(else_block, ast);
                 let else_cfg_has_early_return = else_cfg.has_early_return();
 
-                cfg.consume_subgraph(else_cfg, Some(false_edge), branch_condition_index);
+                cfg.consume_subgraph(else_cfg, Some(false_edge), branch_condition_index, false);
 
                 if if_true_cfg_has_early_return && else_cfg_has_early_return {
                     // Both the `true` and `false` branches of the if statement have an early return.
@@ -239,7 +281,7 @@ pub fn construct_cfg_from_if(
                     cfg.set_has_early_return(true)
                 }
 
-                cfg.consume_subgraph(else_if_cfg, Some(false_edge), branch_condition_index);
+                cfg.consume_subgraph(else_if_cfg, Some(false_edge), branch_condition_index, false);
             }
         }
     } else {

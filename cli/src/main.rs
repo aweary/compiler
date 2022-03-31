@@ -14,6 +14,7 @@ use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 const ENTRYPOINT_FILENAME: &'static str = "main.ws";
 
 #[derive(Clap)]
+
 struct Opts {
     #[clap(subcommand)]
     subcmd: Commands,
@@ -52,11 +53,6 @@ async fn build(options: BuildOptions) {
     // Compile the entry point module so we can start building up
     // the import graph.
     let compiled = db.compile(entry_point.clone());
-    // let ast = {
-    //     let text = fs::read_to_string(entry_point.clone()).await.unwrap();
-    //     db.set_file_text(entry_point.clone(), text.into());
-    //     db.parse(entry_point.clone())
-    // };
     match compiled {
         Ok(ast) => {
             debug!("ast: {:#?}", ast);

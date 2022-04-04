@@ -204,6 +204,12 @@ pub enum TokenKind {
     Pipeline,
     /// End-of-file
     EOF,
+    /// Boolean
+    Boolean,
+    /// Number,
+    NumberType,
+    /// String
+    StringType,
 }
 
 impl Display for TokenKind {
@@ -263,6 +269,9 @@ impl Display for TokenKind {
             TokenKind::Match => write!(f, "match"),
             TokenKind::Underscore => write!(f, "_"),
             TokenKind::Effect => write!(f, "effect"),
+            TokenKind::Boolean => write!(f, "boolean"),
+            TokenKind::NumberType => write!(f, "number"),
+            TokenKind::StringType => write!(f, "string"),
         }
     }
 }

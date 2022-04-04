@@ -14,6 +14,7 @@ pub struct AstArena {
     pub functions: Arena<RefCell<Function>>,
     pub statements: Arena<Statement>,
     pub consts: Arena<Const>,
+    pub parameters: Arena<Parameter>,
 }
 
 impl AstArena {
@@ -33,6 +34,7 @@ pub type ExpressionId = Id<RefCell<Expression>>;
 pub type FunctionId = Id<RefCell<Function>>;
 pub type StatementId = Id<Statement>;
 pub type ConstId = Id<Const>;
+pub type ParameterId = Id<Parameter>;
 
 pub struct Module {
     pub definitions: Vec<Definition>,
@@ -68,6 +70,16 @@ pub enum Expression {
     Number(f64),
     Boolean(bool),
     Reference(Binding),
+    Call {
+        callee: ExpressionId,
+        arguments: Vec<Argument>,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Argument {
+    pub name: Option<Identifier>,
+    pub value: ExpressionId,
 }
 
 #[derive(Debug)]
@@ -102,15 +114,33 @@ pub struct Block {
     pub statements: Vec<StatementId>,
 }
 
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+pub enum Type {
+    Number,
+    String,
+    Boolean,
+    Function {
+        parameters: Vec<Type>,
+        return_type: Box<Type>,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Parameter {
+    pub name: Identifier,
+    pub type_: Option<Type>,
+}
+
 pub struct Function {
     pub name: Identifier,
-    pub body: BlockId,
+    pub body: Option<BlockId>,
+    pub parameters: Option<Vec<ParameterId>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Identifier {
     pub span: Span,
-    pub name: Symbol,
+    pub symbol: Symbol,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -118,6 +148,7 @@ pub enum Binding {
     Let(StatementId),
     Const(ConstId),
     Function(FunctionId),
+    Parameter(ParameterId),
 }
 
 impl Referant for Binding {}

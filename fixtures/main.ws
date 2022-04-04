@@ -1,10 +1,18 @@
 const MIN_LENGTH = 10
 
-fn name() {
-  let x = 1
-  let y = x * 51 / 2
-  let z = 4 - y
-  if x == 2 {
-    let y = 1
+fn math(shouldAdd: bool, first: number, second: number) {
+  if shouldAdd {
+    return first + second
+  } else {
+    return first - second
   }
 }
+
+fn seven() {
+  let three = math(true, 1, 2)
+  let four = math(false, 5, 1)
+  let seven = three + four
+  return seven
+}
+
+const a = seven()

@@ -51,7 +51,7 @@ fn walk_function(visitor: &impl Visitor, function_id: FunctionId) -> Result<()> 
     let arena = visitor.context();
     let function = arena.functions.get(function_id).unwrap();
     let function = function.borrow();
-    walk_block(visitor, function.body)
+    walk_block(visitor, function.body.unwrap())
 }
 
 fn walk_block(visitor: &impl Visitor, block_id: BlockId) -> Result<()> {

@@ -10,6 +10,7 @@ edition = "2018"
 
 lexer = { path = "../lexer" } 
 syntax = { path = "../syntax" }
+evaluate = { path = "../evaluate" }
 diagnostics = { path = "../diagnostics" }
 types = { path = "../types" }
 vfs = { path = "../vfs" }

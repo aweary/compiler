@@ -2,6 +2,7 @@ use crate::control_flow::constrct_cfg_from_block;
 use crate::parser_::ParserImpl;
 use common::control_flow_graph::ControlFlowGraph;
 use diagnostics::result::Result;
+use evaluate::Value;
 
 use std::cell::{RefCell};
 use syntax::ast_::*;
@@ -15,7 +16,7 @@ pub fn parse_cfg_from_statements(stmts: &str) -> String {
 
     struct CFGVisitor<'a> {
         ast_arena: &'a mut AstArena,
-        cfg: RefCell<Option<ControlFlowGraph<StatementId, ExpressionId>>>,
+        cfg: RefCell<Option<ControlFlowGraph<StatementId, ExpressionId, Value>>>,
     }
 
     impl<'a> Visitor for CFGVisitor<'a> {
@@ -23,8 +24,8 @@ pub fn parse_cfg_from_statements(stmts: &str) -> String {
             let arena = self.context();
             let function = arena.functions.get(function_id).unwrap();
             let function = function.borrow();
-            let body = arena.blocks.get(function.body).unwrap();
-            let cfg = constrct_cfg_from_block(body, arena);
+            let body = arena.blocks.get(function.body.unwrap()).unwrap();
+            let cfg = constrct_cfg_from_block(body, arena, None);
             let mut cfg_cell = self.cfg.borrow_mut();
             *cfg_cell = Some(cfg);
             Ok(())

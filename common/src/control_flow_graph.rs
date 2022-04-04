@@ -2,11 +2,17 @@ use log::debug;
 use petgraph::dot::Dot;
 use petgraph::graph::{DiGraph, NodeIndex};
 use petgraph::visit::{ControlFlow, DfsEvent, IntoNodeReferences};
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, VecDeque, HashSet};
 use std::fmt::Debug;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct BlockIndex(NodeIndex);
+pub struct BlockIndex(pub NodeIndex);
+
+impl Into<NodeIndex> for BlockIndex {
+    fn into(self) -> NodeIndex {
+        self.0
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 struct Block {}
@@ -86,7 +92,7 @@ pub fn walk_control_flow_graph<T, E, F, C>(
     depth_first_search(graph, Some(entry.0), f);
 }
 
-pub struct ControlFlowGraph<T, E> {
+pub struct ControlFlowGraph<T, E, V> {
     pub graph: DiGraph<ControlFlowNode<T, E>, ControlFlowEdge>,
     pub edge_queue: VecDeque<PartialEdge>,
     has_early_return: bool,
@@ -94,9 +100,10 @@ pub struct ControlFlowGraph<T, E> {
     exit_index: BlockIndex,
     first_index: Option<BlockIndex>,
     last_index: Option<BlockIndex>,
+    pub evaluations: Vec<V>,
 }
 
-impl<T, E> Default for ControlFlowGraph<T, E> {
+impl<T, E, V> Default for ControlFlowGraph<T, E, V> {
     fn default() -> Self {
         let mut graph = DiGraph::default();
         let entry_index = BlockIndex(graph.add_node(ControlFlowNode::Entry));
@@ -109,14 +116,16 @@ impl<T, E> Default for ControlFlowGraph<T, E> {
             exit_index,
             first_index: None,
             last_index: None,
+            evaluations: Vec::default(),
         }
     }
 }
 
-impl<T, E> ControlFlowGraph<T, E>
+impl<T, E, V> ControlFlowGraph<T, E, V>
 where
     E: Debug + Clone,
     T: Debug + Clone,
+    V: Debug + Clone,
 {
     pub fn format(&self) -> String {
         format!("{:?}", Dot::with_config(&self.graph, &[]))
@@ -145,6 +154,8 @@ where
         entry_index: BlockIndex,
         flush_edge_queue: bool,
     ) {
+        
+        self.evaluations.extend(other.evaluations.iter().cloned());
         let other_has_early_return = other.has_early_return();
         let mut edges_to_enqueue: Vec<PartialEdge> = vec![];
 

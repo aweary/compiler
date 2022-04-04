@@ -7,6 +7,7 @@ members = [
     "compiler",
     "db",
     "diagnostics",
+    "evaluate",
     "lexer",
     "lsp",
     "parser",

@@ -26,16 +26,14 @@ fn parse(db: &dyn Parser, path: PathBuf) -> Result<()> {
     let evaluate = ExpressionEvaluator::new(&mut arena);
 
     evaluate.visit_module(module_id)?;
+    // We want to do constant propagation before we do control flow analysis.
+    // That way we can populate known values in call expressions and generate
+    // control flow graphs that have annotated return value data.
+    // That way we support constant functions, where we can statically determine
+    // the return value of a function and inline.
 
-    let cfg_analysis = ControlFlowAnalysis::new(&mut arena);
-
-    cfg_analysis.visit_module(module_id)?;
-
-    let map = cfg_analysis.finish();
-
-    for (_function_id, cfg) in map {
-        codegen_from_cfg(&cfg)?;
-    }
+    // let cfg_analysis = ControlFlowAnalysis::new(&mut arena);
+    // cfg_analysis.visit_module(module_id)?;
 
     Ok(())
 }
@@ -102,7 +100,7 @@ impl<'source, 'ctx> ParserImpl<'source, 'ctx> {
     fn parse_const(&mut self) -> Result<ConstId> {
         self.expect(TokenKind::Const)?;
         let name = self.identifier()?;
-        let symbol = name.name;
+        let symbol = name.symbol;
         self.expect(TokenKind::Equals)?;
         let value = self.parse_expression(Precedence::None)?;
         let const_ = Const { name, value };
@@ -111,14 +109,113 @@ impl<'source, 'ctx> ParserImpl<'source, 'ctx> {
         Ok(const_)
     }
 
+    fn parse_type(&mut self) -> Result<Type> {
+        // Parse function parameters for types like (a: string, b: int) => int
+        if self.eat(TokenKind::LParen)? {
+            let span = self.span;
+            let mut parameters = vec![];
+            loop {
+                if self.peek()?.kind == TokenKind::RParen {
+                    break;
+                }
+                let type_ = self.parse_type()?;
+                parameters.push(type_);
+                if self.eat(TokenKind::Comma)? {
+                    continue;
+                } else {
+                    break;
+                }
+            }
+            self.expect(TokenKind::RParen)?;
+            self.expect(TokenKind::Arrow)?;
+            let return_type = self.parse_type()?.into();
+            let span = span.merge(self.span);
+            return Ok(Type::Function {
+                parameters,
+                return_type,
+            });
+        }
+
+        match self.peek()?.kind {
+            TokenKind::Boolean => {
+                self.expect(TokenKind::Boolean)?;
+                return Ok(Type::Boolean);
+            }
+            TokenKind::NumberType => {
+                self.expect(TokenKind::NumberType)?;
+                return Ok(Type::Number);
+            }
+            TokenKind::StringType => {
+                self.expect(TokenKind::StringType)?;
+                return Ok(Type::String);
+            }
+            _ => {
+                todo!()
+            }
+        }
+    }
+
+    fn parameter(&mut self) -> Result<Parameter> {
+        let name = self.identifier()?;
+        let type_ = if self.eat(TokenKind::Colon)? {
+            Some(self.parse_type()?)
+        } else {
+            None
+        };
+        Ok(Parameter { name, type_ })
+    }
+
+    fn parse_parameters(&mut self) -> Result<Option<Vec<ParameterId>>> {
+        use TokenKind::{Comma, LParen, RParen};
+        if self.eat(LParen)? {
+            let mut parameters = vec![];
+            loop {
+                if let TokenKind::Identifier(symbol) = self.peek()?.kind {
+                    let parameter = self.parameter()?;
+                    let parameter_id = self.ctx.parameters.alloc(parameter);
+                    self.scope_map
+                        .define(symbol, Binding::Parameter(parameter_id));
+                    parameters.push(parameter_id);
+                    if self.eat(Comma)? {
+                        // Another parameter, continue
+                        continue;
+                    } else {
+                        // Expect the end of the params list
+                        break;
+                    }
+                } else {
+                    break;
+                }
+            }
+            self.expect(RParen)?;
+            if parameters.is_empty() {
+                Ok(None)
+            } else {
+                Ok(Some(parameters))
+            }
+        } else {
+            Ok(None)
+        }
+    }
+
     fn parse_function(&mut self) -> Result<FunctionId> {
         self.expect(TokenKind::Fn)?;
         let name = self.identifier()?;
-        self.expect(TokenKind::LParen)?;
-        self.expect(TokenKind::RParen)?;
-        let body = self.parse_block()?;
-        let function = Function { body, name };
+        let symbol = name.symbol;
+        let parameters = self.parse_parameters()?;
+        let function = Function {
+            body: None,
+            name,
+            parameters,
+        };
         let function_id = self.ctx.alloc_function(function);
+        self.scope_map
+            .define(symbol, Binding::Function(function_id));
+        let body = self.parse_block()?;
+        let function = self.ctx.functions.get_mut(function_id).unwrap();
+        let mut function = function.borrow_mut();
+        function.body = Some(body);
+
         Ok(function_id)
     }
 
@@ -202,7 +299,7 @@ impl<'source, 'ctx> ParserImpl<'source, 'ctx> {
     fn parse_let(&mut self) -> Result<StatementId> {
         self.expect(TokenKind::Let)?;
         let name = self.identifier()?;
-        let symbol = name.name;
+        let symbol = name.symbol;
         self.expect(TokenKind::Equals)?;
         let value = self.parse_expression(Precedence::None)?;
         let let_ = Statement::Let { name, value };
@@ -215,6 +312,7 @@ impl<'source, 'ctx> ParserImpl<'source, 'ctx> {
         let mut expression = self.parse_prefix_expression()?;
         while precedence < self.peek()?.precedence() {
             expression = self.parse_infix_expression(expression)?;
+            println!("{:#?}", self.ctx.expressions.get(expression).unwrap());
         }
         Ok(expression)
     }
@@ -231,8 +329,115 @@ impl<'source, 'ctx> ParserImpl<'source, 'ctx> {
         Ok(self.ctx.alloc_expression(expression))
     }
 
-    fn call_expression(&mut self, callee: ExpressionId) -> Result<ExpressionId> {
-        todo!()
+    fn call_expression(&mut self, callee_id: ExpressionId) -> Result<ExpressionId> {
+        let callee = self.ctx.expressions.get(callee_id).unwrap();
+        let callee = callee.borrow();
+        match *callee {
+            Expression::Reference(_) => {
+                std::mem::drop(callee);
+                let arguments = self.parse_arguments()?;
+                let expression = Expression::Call {
+                    callee: callee_id,
+                    arguments,
+                };
+                let expression_id = self.ctx.alloc_expression(expression);
+                Ok(expression_id)
+            }
+            _ => {
+                todo!()
+            }
+        }
+        // TODO
+        // - call graph
+        // - evaluate to see if we can inline
+    }
+
+    fn parse_arguments(&mut self) -> Result<Vec<Argument>> {
+        self.expect(TokenKind::LParen)?;
+        // Arguments can be positional like foo(bar) or named
+        // like foo(bar: baz).
+        #[derive(Debug, PartialEq, Eq)]
+        enum CallFormat {
+            Unknown,
+            Named,
+            Positional,
+        }
+        let mut arguments = vec![];
+        let mut call_format = CallFormat::Unknown;
+
+        if self.eat(TokenKind::RParen)? {
+            return Ok(arguments);
+        }
+
+        loop {
+            // End of arguments
+            if let TokenKind::RParen = self.peek()?.kind {
+                break;
+            }
+            // TODO can't parse as expression because we do name resolution here
+            if let TokenKind::Identifier(_) = self.peek()?.kind {
+                let name = self.identifier()?;
+                if self.eat(TokenKind::Colon)? {
+                    // Named argument
+                    if call_format == CallFormat::Positional {
+                        use diagnostics::error::named_argument_after_positional;
+                        // Parse the next expression to include it in the error reporting
+                        let expr = self.parse_expression(Precedence::None)?;
+                        panic!("TODO");
+                        // let span = name.span.merge(expr.span);
+                        // return named_argument_after_positional(
+                        //     span,
+                        //     arguments.last().unwrap().span,
+                        // );
+                    }
+                    call_format = CallFormat::Named;
+                    let value = self.parse_expression(Precedence::None)?;
+                    let span = name.span.merge(self.span);
+                    let argument = Argument {
+                        name: Some(name),
+                        value,
+                    };
+                    arguments.push(argument);
+                } else {
+                    // Positional argument
+                    let expr = self.parse_expression_from_identifier(name.symbol, name.span)?;
+                    if call_format == CallFormat::Named {
+                        todo!()
+                        // use diagnostics::error::positional_argument_after_named;
+                        // return positional_argument_after_named(
+                        //     expr.span,
+                        //     arguments.last().unwrap().span,
+                        // );
+                    }
+                    call_format = CallFormat::Positional;
+                    let expr = self.parse_expression_from_identifier(name.symbol, name.span)?;
+                    let argument = Argument {
+                        name: None,
+                        value: expr,
+                    };
+                    arguments.push(argument);
+                }
+            } else {
+                let expr = self.parse_expression(Precedence::None)?;
+                if call_format == CallFormat::Named {
+                    use diagnostics::error::positional_argument_after_named;
+                    todo!()
+                    // return positional_argument_after_named(
+                    //     expr.span,
+                    //     arguments.last().unwrap().span,
+                    // );
+                }
+                call_format = CallFormat::Positional;
+                let argument = Argument {
+                    name: None,
+                    value: expr,
+                };
+                arguments.push(argument);
+            }
+            self.eat(TokenKind::Comma)?;
+        }
+        self.expect(TokenKind::RParen)?;
+        Ok(arguments)
     }
 
     fn parse_infix_expression(&mut self, prefix: ExpressionId) -> Result<ExpressionId> {
@@ -313,7 +518,7 @@ impl<'source, 'ctx> ParserImpl<'source, 'ctx> {
         let token = self.next()?;
         match token.kind {
             TokenKind::Identifier(symbol) => Ok(Identifier {
-                name: symbol,
+                symbol,
                 span: token.span,
             }),
             _ => {

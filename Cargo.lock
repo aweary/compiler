@@ -267,6 +267,7 @@ version = "0.1.0"
 dependencies = [
  "common",
  "diagnostics",
+ "evaluate",
  "petgraph",
  "syntax",
 ]
@@ -458,6 +459,14 @@ dependencies = [
  "log",
  "regex",
  "termcolor",
+]
+
+[[package]]
+name = "evaluate"
+version = "0.1.0"
+dependencies = [
+ "common",
+ "syntax",
 ]
 
 [[package]]
@@ -1035,6 +1044,7 @@ dependencies = [
  "common",
  "diagnostics",
  "edit-distance",
+ "evaluate",
  "id-arena",
  "insta",
  "lexer",

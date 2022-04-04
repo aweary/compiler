@@ -1,13 +1,10 @@
 [package]
-name = "codegen"
+name = "evaluate"
 version = "0.1.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-diagnostics = { path = "../diagnostics" }
 syntax = { path = "../syntax" }
 common = { path = "../common" }
-evaluate = { path = "../evaluate" }
-petgraph = "0.6.0"

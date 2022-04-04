@@ -279,6 +279,9 @@ impl<'s> Lexer<'s> {
                 "or" => Or,
                 "match" => Match,
                 "effect" => Effect,
+                "number" => NumberType,
+                "string" => StringType,
+                "bool" => Boolean,
                 _ => {
                     let symbol = Symbol::intern(word);
                     Identifier(symbol)

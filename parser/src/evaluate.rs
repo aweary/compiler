@@ -1,5 +1,11 @@
+use std::collections::HashMap;
+
 use diagnostics::result::Result;
 use syntax::{ast::BinOp, ast_::*, visit_::Visitor};
+
+use crate::control_flow::constrct_cfg_from_block;
+
+use evaluate::Value;
 
 pub struct ExpressionEvaluator<'a> {
     arena: &'a mut AstArena,
@@ -11,14 +17,56 @@ impl<'a> ExpressionEvaluator<'a> {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-enum Value {
-    Boolean(bool),
-    Number(f64),
+#[derive(Debug, Clone)]
+pub struct CallContext {
+    pub arguments: HashMap<ParameterId, ExpressionId>,
 }
 
-fn evaluate_expression(arena: &AstArena, expression: &Expression) -> Option<Value> {
+pub fn evaluate_expression(
+    arena: &AstArena,
+    expression: &Expression,
+    call_context: Option<&CallContext>,
+) -> Option<Value> {
+    println!("evaluate_expression: {:?}", expression);
+    println!("call_context: {:?}", call_context);
     match expression {
+        Expression::Call { callee, arguments } => {
+            let callee_expr = arena.expressions.get(*callee).expect("callee not found");
+            if let Expression::Reference(Binding::Function(function_id)) = *callee_expr.borrow() {
+                let function_ref = arena
+                    .functions
+                    .get(function_id)
+                    .expect("function not found");
+                let function = function_ref.borrow();
+                let body = arena
+                    .blocks
+                    .get(function.body.unwrap())
+                    .expect("function body not found");
+
+                let call_context = if let Some(parameters) = &function.parameters {
+                    let params_and_arguments = parameters.iter().zip(arguments.iter());
+                    let mut arguments = HashMap::new();
+                    for (parameter, argument) in params_and_arguments {
+                        arguments.insert(*parameter, argument.value);
+                    }
+                    Some(CallContext { arguments })
+                } else {
+                    None
+                };
+                println!("call context {:?}", call_context);
+
+                let cfg = constrct_cfg_from_block(body, arena, call_context.as_ref());
+                println!("calling function with control flow of");
+                println!("{:?}", cfg.evaluations);
+                if cfg.evaluations.len() == 1 {
+                    Some(cfg.evaluations.first().unwrap().to_owned())
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        }
         Expression::Binary { left, right, op } => {
             let left_expr = {
                 let left_expr_cell = arena.expressions.get(*left).unwrap();
@@ -29,8 +77,8 @@ fn evaluate_expression(arena: &AstArena, expression: &Expression) -> Option<Valu
                 right_expr_cell.borrow()
             };
 
-            let left_value = evaluate_expression(arena, &left_expr);
-            let right_value = evaluate_expression(arena, &right_expr);
+            let left_value = evaluate_expression(arena, &left_expr, call_context);
+            let right_value = evaluate_expression(arena, &right_expr, call_context);
 
             match (left_value, right_value) {
                 (Some(left_value), Some(right_value)) => match (left_value, right_value) {
@@ -67,7 +115,7 @@ fn evaluate_expression(arena: &AstArena, expression: &Expression) -> Option<Valu
                 match statement {
                     Statement::Let { value, .. } => {
                         let expression = arena.expressions.get(*value).unwrap().borrow();
-                        evaluate_expression(arena, &expression)
+                        evaluate_expression(arena, &expression, call_context)
                     }
                     _ => None,
                 }
@@ -75,10 +123,22 @@ fn evaluate_expression(arena: &AstArena, expression: &Expression) -> Option<Valu
             Binding::Const(const_id) => {
                 let const_ = arena.consts.get(*const_id).unwrap();
                 let expression = arena.expressions.get(const_.value).unwrap().borrow();
-                evaluate_expression(arena, &expression)
+                evaluate_expression(arena, &expression, call_context)
             }
-            _ => None
-            // Binding::Function(function_id) => todo!(),
+            Binding::Parameter(parameter_id) => {
+                if let Some(call_context) = call_context {
+                    if let Some(value) = call_context.arguments.get(parameter_id) {
+                        let value_expression = arena.expressions.get(*value).unwrap();
+                        let value_expression = value_expression.borrow();
+                        evaluate_expression(arena, &value_expression, Some(call_context))
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            }
+            _ => None, // Binding::Function(function_id) => todo!(),
         },
         _ => None,
     }
@@ -95,20 +155,19 @@ impl<'a> Visitor for ExpressionEvaluator<'a> {
 
     fn visit_expression(&self, expression: &mut Expression) -> Result<()> {
         println!("evaluate {:?}", expression);
-        if let Some(value) = evaluate_expression(self.arena, expression) {
-            println!("value {:?}\n", value);
-            match value {
-                Value::Boolean(value) => {
-                    *expression = Expression::Boolean(value);
-                }
-                Value::Number(value) => {
-                    *expression = Expression::Number(value);
-                }
-            }
+        if let Some(value) = evaluate_expression(self.arena, expression, None) {
+            *expression = value_to_expression(value);
         } else {
             println!("No value\n")
         }
         Ok(())
+    }
+}
+
+pub fn value_to_expression(value: Value) -> Expression {
+    match value {
+        Value::Boolean(value) => Expression::Boolean(value),
+        Value::Number(value) => Expression::Number(value),
     }
 }
 

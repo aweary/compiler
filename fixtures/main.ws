@@ -1,18 +1,22 @@
-const MIN_LENGTH = 10
-
-fn math(shouldAdd: bool, first: number, second: number) {
-  if shouldAdd {
-    return first + second
-  } else {
-    return first - second
+fn test(x: number) {
+  if x > 5 {
+    if x == 6 {
+      return 5
+    }
+    let y = x + 10
+    if y == 17 {
+      return 10000
+    }
+    return y - 1
   }
+  let y = 2
+  return x + y
 }
 
-fn seven() {
-  let three = math(true, 1, 2)
-  let four = math(false, 5, 1)
-  let seven = three + four
-  return seven
-}
+# Potential byte-code format
+# DEFINE_FUNCTION 'test'
 
-const a = seven()
+fn main() {
+  # This is statically evaluated!
+  let answer = test(7)
+}

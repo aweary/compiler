@@ -27,8 +27,6 @@ pub fn evaluate_expression(
     expression: &Expression,
     call_context: Option<&CallContext>,
 ) -> Option<Value> {
-    println!("evaluate_expression: {:?}", expression);
-    println!("call_context: {:?}", call_context);
     match expression {
         Expression::Call { callee, arguments } => {
             let callee_expr = arena.expressions.get(*callee).expect("callee not found");
@@ -53,16 +51,12 @@ pub fn evaluate_expression(
                 } else {
                     None
                 };
-                println!("call context {:?}", call_context);
-
                 let cfg = constrct_cfg_from_block(body, arena, call_context.as_ref());
-                println!("calling function with control flow of");
-                println!("{:?}", cfg.evaluations);
-                if cfg.evaluations.len() == 1 {
-                    Some(cfg.evaluations.first().unwrap().to_owned())
-                } else {
-                    None
-                }
+                println!(
+                    "Call to '{}' expression evaluated to: {:?}",
+                    function.name.symbol, cfg.value
+                );
+                cfg.value
             } else {
                 None
             }
@@ -154,11 +148,46 @@ impl<'a> Visitor for ExpressionEvaluator<'a> {
     }
 
     fn visit_expression(&self, expression: &mut Expression) -> Result<()> {
-        println!("evaluate {:?}", expression);
-        if let Some(value) = evaluate_expression(self.arena, expression, None) {
+        let call_context = if let Expression::Call { callee, arguments } = expression {
+            let callee_expr = self
+                .arena
+                .expressions
+                .get(*callee)
+                .expect("callee not found");
+            let callee_expr = callee_expr.borrow();
+
+            if let Expression::Reference(binding) = *callee_expr {
+                if let Binding::Function(function_id) = binding {
+                    let function = self.arena.functions.get(function_id).unwrap();
+                    let function = function.borrow();
+                    match &function.parameters {
+                        Some(parameters) => {
+                            let params_and_arguments = parameters.iter().zip(arguments.iter());
+                            let mut arguments = HashMap::new();
+                            for (parameter, argument) in params_and_arguments {
+                                arguments.insert(*parameter, argument.value);
+                            }
+                            let call_context = CallContext { arguments };
+                            Some(call_context)
+                        }
+                        None => Some(CallContext {
+                            arguments: HashMap::new(),
+                        }),
+                    }
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        if let Some(value) = evaluate_expression(self.arena, expression, call_context.as_ref()) {
             *expression = value_to_expression(value);
         } else {
-            println!("No value\n")
+            // ...
         }
         Ok(())
     }

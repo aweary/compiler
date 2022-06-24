@@ -69,6 +69,7 @@ pub enum Expression {
     },
     Number(f64),
     Boolean(bool),
+    String(Symbol),
     Reference(Binding),
     Call {
         callee: ExpressionId,

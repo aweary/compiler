@@ -32,8 +32,12 @@ fn parse(db: &dyn Parser, path: PathBuf) -> Result<()> {
     // That way we support constant functions, where we can statically determine
     // the return value of a function and inline.
 
-    // let cfg_analysis = ControlFlowAnalysis::new(&mut arena);
-    // cfg_analysis.visit_module(module_id)?;
+    let cfg_analysis = ControlFlowAnalysis::new(&mut arena);
+    cfg_analysis.visit_module(module_id)?;
+    let cfg_map = cfg_analysis.finish();
+    for (_, cfg) in cfg_map.iter() {
+        codegen_from_cfg(cfg, &mut arena)?;
+    }
 
     Ok(())
 }
@@ -312,7 +316,6 @@ impl<'source, 'ctx> ParserImpl<'source, 'ctx> {
         let mut expression = self.parse_prefix_expression()?;
         while precedence < self.peek()?.precedence() {
             expression = self.parse_infix_expression(expression)?;
-            println!("{:#?}", self.ctx.expressions.get(expression).unwrap());
         }
         Ok(expression)
     }
@@ -380,9 +383,9 @@ impl<'source, 'ctx> ParserImpl<'source, 'ctx> {
                 if self.eat(TokenKind::Colon)? {
                     // Named argument
                     if call_format == CallFormat::Positional {
-                        use diagnostics::error::named_argument_after_positional;
+                        // use diagnostics::error::named_argument_after_positional;
                         // Parse the next expression to include it in the error reporting
-                        let expr = self.parse_expression(Precedence::None)?;
+                        // let expr = self.parse_expression(Precedence::None)?;
                         panic!("TODO");
                         // let span = name.span.merge(expr.span);
                         // return named_argument_after_positional(
@@ -391,8 +394,8 @@ impl<'source, 'ctx> ParserImpl<'source, 'ctx> {
                         // );
                     }
                     call_format = CallFormat::Named;
-                    let value = self.parse_expression(Precedence::None)?;
-                    let span = name.span.merge(self.span);
+                    let value = self.parse_expression_from_identifier(name.symbol, name.span)?;
+                    // let span = name.span.merge(self.span);
                     let argument = Argument {
                         name: Some(name),
                         value,
@@ -420,7 +423,7 @@ impl<'source, 'ctx> ParserImpl<'source, 'ctx> {
             } else {
                 let expr = self.parse_expression(Precedence::None)?;
                 if call_format == CallFormat::Named {
-                    use diagnostics::error::positional_argument_after_named;
+                    // use diagnostics::error::positional_argument_after_named;
                     todo!()
                     // return positional_argument_after_named(
                     //     expr.span,
@@ -472,13 +475,19 @@ impl<'source, 'ctx> ParserImpl<'source, 'ctx> {
                 self.spans.insert(expression_id, self.prev_span);
                 Ok(expression_id)
             }
+            TokenKind::String(symbol) => {
+                self.next()?;
+                let expression_id = self.ctx.alloc_expression(Expression::String(symbol));
+                self.spans.insert(expression_id, self.prev_span);
+                Ok(expression_id)
+            }
             // References
             TokenKind::Identifier(symbol) => {
                 let token = self.next()?;
                 self.parse_expression_from_identifier(symbol, token.span)
             }
             _ => {
-                println!("cant {:?}", self.peek()?);
+                println!("NOPE {:?}", self.peek()?);
                 todo!()
             }
         }
@@ -492,12 +501,12 @@ impl<'source, 'ctx> ParserImpl<'source, 'ctx> {
         if let Some((binding, _)) = self.scope_map.resolve(&symbol) {
             let expression = Expression::Reference(*binding);
             let expression_id = self.ctx.alloc_expression(expression);
-            Ok(expression_id)
+            self.parse_infix_expression(expression_id)
         } else {
             // TODO move edit distance check into scope_map
             use edit_distance::edit_distance;
             let symbol_str = format!("{}", symbol);
-            let mut maybe_reference_span: Option<Span> = None;
+            let maybe_reference_span: Option<Span> = None;
             let max_edit_distance = 2;
             for scope in self.scope_map.scope_iter() {
                 for (binding_symbol, (binding, _)) in &scope.bindings {

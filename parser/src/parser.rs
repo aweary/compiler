@@ -29,7 +29,7 @@ fn parse(db: &dyn Parser, path: PathBuf) -> Result<Module> {
     let source = db.file_text(path);
     let mut ast_arena = AstArena::default();
     let parser = ParserImpl::new(&source, &mut ast_arena);
-    let mut module = parser.parse_module()?;
+    let module = parser.parse_module()?;
     // let mut cfg_analysis = ControlFlowAnalysis::new(&mut ast_arena);
     // cfg_analysis.visit_module(&mut module)?;
     // let cfg_map = cfg_analysis.finish();

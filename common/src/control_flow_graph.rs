@@ -2,7 +2,7 @@ use log::debug;
 use petgraph::dot::Dot;
 use petgraph::graph::{DiGraph, NodeIndex};
 use petgraph::visit::{ControlFlow, DfsEvent, IntoNodeReferences};
-use std::collections::{HashMap, VecDeque, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::fmt::Debug;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -100,7 +100,7 @@ pub struct ControlFlowGraph<T, E, V> {
     exit_index: BlockIndex,
     first_index: Option<BlockIndex>,
     last_index: Option<BlockIndex>,
-    pub evaluations: Vec<V>,
+    pub value: Option<V>,
 }
 
 impl<T, E, V> Default for ControlFlowGraph<T, E, V> {
@@ -116,7 +116,7 @@ impl<T, E, V> Default for ControlFlowGraph<T, E, V> {
             exit_index,
             first_index: None,
             last_index: None,
-            evaluations: Vec::default(),
+            value: None,
         }
     }
 }
@@ -154,8 +154,9 @@ where
         entry_index: BlockIndex,
         flush_edge_queue: bool,
     ) {
-        
-        self.evaluations.extend(other.evaluations.iter().cloned());
+        if let Some(value) = &other.value {
+            self.value = Some(value.clone());
+        }
         let other_has_early_return = other.has_early_return();
         let mut edges_to_enqueue: Vec<PartialEdge> = vec![];
 

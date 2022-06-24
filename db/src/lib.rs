@@ -16,7 +16,7 @@ pub trait Compiler: Parser + FileSystem {
 }
 
 fn compile(db: &dyn Compiler, path: PathBuf) -> Result<Vec<usize>> {
-    let mut ast = db.parse(path)?;
+    let ast = db.parse(path)?;
     Ok(vec![])
 }
 

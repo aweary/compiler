@@ -72,9 +72,8 @@ pub fn constrct_cfg_from_block(
                 let value_expr = ast.expressions.get(*expression_id).unwrap();
                 let value_expr = value_expr.borrow();
                 let value = evaluate_expression(ast, &value_expr, call_context);
-                println!("RETURN {:?}", value);
-                if let Some(value) = value {
-                    cfg.evaluations.push(value);
+                if cfg.value.is_none() {
+                    cfg.value = value;
                 }
                 cfg.set_has_early_return(true);
                 basic_block.statements.push(*statement_id);
@@ -137,78 +136,6 @@ pub fn constrct_cfg_from_block(
                 cfg.enqueue_edge(loop_condition_index, false_edge);
             }
         }
-
-        // match &statement.kind {
-        //     StatementKind::Let(_) | StatementKind::State(_) | StatementKind::Expression(_) => {
-        //         basic_block.statements.push(*statement_id);
-        //     }
-        //     StatementKind::Return(_) => {
-        //         cfg.set_has_early_return(true);
-        //         basic_block.statements.push(*statement_id);
-        //         let block_index = cfg.add_block(basic_block);
-        //         cfg.add_edge_to_exit(block_index, ControlFlowEdge::Return);
-        //         basic_block = BasicBlock::new();
-        //     }
-        //     StatementKind::If(if_) => {
-        //         if !basic_block.is_empty() {
-        //             cfg.add_block(basic_block);
-        //             basic_block = BasicBlock::new();
-        //         }
-
-        //         // The edge queue here should be flushed to the NEW entry node
-        //         // for the consumed if statement.
-        //         debug!("edge_queue before if: {:?}", cfg.edge_queue);
-        //         debug!("last_index before if: {:?}", cfg.last_index());
-
-        //         let if_cfg = construct_cfg_from_if(if_, ast);
-
-        //         let if_cfg_has_early_return = if_cfg.has_early_return();
-
-        //         if if_cfg_has_early_return {
-        //             cfg.set_has_early_return(true);
-        //         }
-
-        //         cfg.consume_subgraph(if_cfg, None, cfg.last_index(), true);
-        //     }
-
-        //     StatementKind::While(while_) => {
-        //         if !basic_block.is_empty() {
-        //             cfg.add_block(basic_block);
-        //             basic_block = BasicBlock::new();
-        //         }
-
-        //         let last_index = cfg.last_index();
-        //         let loop_condition_index = cfg.add_loop_condition(while_.condition);
-        //         cfg.add_edge(last_index, loop_condition_index, ControlFlowEdge::Normal);
-
-        //         let mut while_body_cfg = constrct_cfg_from_block(&while_.body, ast);
-        //         let while_body_has_early_return = while_body_cfg.has_early_return();
-
-        //         // Delete the normal flow edge from the last block to the exit node
-        //         while_body_cfg
-        //             .delete_normal_edge(while_body_cfg.last_index(), while_body_cfg.exit_index());
-
-        //         let true_edge = ControlFlowEdge::ConditionTrue;
-        //         let false_edge = ControlFlowEdge::ConditionFalse;
-
-        //         cfg.consume_subgraph(while_body_cfg, Some(true_edge), loop_condition_index, true);
-
-        //         loop_indicies.insert(cfg.last_index());
-
-        //         if !while_body_has_early_return {
-        //             cfg.add_edge(
-        //                 cfg.last_index(),
-        //                 loop_condition_index,
-        //                 ControlFlowEdge::Normal,
-        //             );
-        //         }
-
-        //         cfg.enqueue_edge(loop_condition_index, false_edge);
-        //     }
-        //     _ => {
-        //         // Do nothing for now...
-        //     } // StatementKind::For(_) => todo!(),
-        // }
     }
 
     if !basic_block.is_empty() {
@@ -234,16 +161,11 @@ pub fn construct_cfg_from_if(
 ) -> ControlFlowGraph<StatementId, ExpressionId, Value> {
     debug!("construct_cfg_from_if:start");
 
-    use crate::evaluate::evaluate_expression;
-
     let condition = ast.expressions.get(if_.condition).unwrap();
     let condition = condition.borrow();
 
-    println!("condition: {:?}", condition);
-
     if let Some(value) = evaluate_expression(ast, &*condition, call_context) {
         if let Value::Boolean(should_run_branch) = value {
-            println!("Branch with a known outcome: {}", should_run_branch);
             if should_run_branch {
                 let body = ast.blocks.get(if_.body).unwrap();
                 return constrct_cfg_from_block(body, ast, call_context);

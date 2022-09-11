@@ -12,9 +12,11 @@ pub struct AstArena {
     pub structs: Arena<Struct>,
     pub expressions: Arena<RefCell<Expression>>,
     pub functions: Arena<RefCell<Function>>,
+    pub components: Arena<RefCell<Component>>,
     pub statements: Arena<Statement>,
     pub consts: Arena<Const>,
     pub parameters: Arena<Parameter>,
+    pub templates: Arena<RefCell<Template>>,
 }
 
 impl AstArena {
@@ -22,8 +24,16 @@ impl AstArena {
         self.expressions.alloc(RefCell::new(expression))
     }
 
+    pub fn alloc_template(&mut self, template: Template) -> TemplateId {
+        self.templates.alloc(RefCell::new(template))
+    }
+
     pub fn alloc_function(&mut self, function: Function) -> FunctionId {
         self.functions.alloc(RefCell::new(function))
+    }
+
+    pub fn alloc_component(&mut self, component: Component) -> ComponentId {
+        self.components.alloc(RefCell::new(component))
     }
 }
 
@@ -31,10 +41,13 @@ pub type ModuleId = Id<Module>;
 pub type BlockId = Id<Block>;
 pub type StructId = Id<Struct>;
 pub type ExpressionId = Id<RefCell<Expression>>;
+pub type TemplateId = Id<RefCell<Template>>;
 pub type FunctionId = Id<RefCell<Function>>;
+pub type ComponentId = Id<RefCell<Component>>;
 pub type StatementId = Id<Statement>;
 pub type ConstId = Id<Const>;
 pub type ParameterId = Id<Parameter>;
+pub type EnumId = Id<Enum>;
 
 pub struct Module {
     pub definitions: Vec<Definition>,
@@ -43,6 +56,7 @@ pub struct Module {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Definition {
     Function(FunctionId),
+    Component(ComponentId),
     Const(ConstId),
     Struct(StructId),
 }
@@ -67,6 +81,10 @@ pub enum Expression {
         right: ExpressionId,
         op: BinOp,
     },
+    Unary {
+        op: BinOp,
+        operand: ExpressionId,
+    },
     Number(f64),
     Boolean(bool),
     String(Symbol),
@@ -75,6 +93,7 @@ pub enum Expression {
         callee: ExpressionId,
         arguments: Vec<Argument>,
     },
+    Template(TemplateId),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -87,6 +106,10 @@ pub struct Argument {
 pub enum Statement {
     Expression(ExpressionId),
     Let {
+        name: Identifier,
+        value: ExpressionId,
+    },
+    State {
         name: Identifier,
         value: ExpressionId,
     },
@@ -138,6 +161,12 @@ pub struct Function {
     pub parameters: Option<Vec<ParameterId>>,
 }
 
+pub struct Component {
+    pub name: Identifier,
+    pub body: Option<BlockId>,
+    pub parameters: Option<Vec<ParameterId>>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Identifier {
     pub span: Span,
@@ -147,9 +176,56 @@ pub struct Identifier {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Binding {
     Let(StatementId),
+    State(StatementId),
     Const(ConstId),
     Function(FunctionId),
     Parameter(ParameterId),
+    Component(ComponentId),
 }
 
 impl Referant for Binding {}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Enum {
+    pub name: Identifier,
+    // pub type_parameters: Option<TypeParameters>,
+    pub variants: Vec<Variant>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Variant {
+    pub name: Identifier,
+    // pub types: Option<Vec<TypeExpression>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+
+pub struct TemplateOpenTag {
+    pub name: Identifier,
+    pub attributes: Vec<TemplateAttribute>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TemplateAttribute {
+    pub name: Identifier,
+    pub value: Option<ExpressionId>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TemplateCloseTag {
+    pub name: Identifier,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Template {
+    pub open_tag: TemplateOpenTag,
+    pub children: Option<Vec<TemplateChild>>,
+    pub close_tag: Option<TemplateCloseTag>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TemplateChild {
+    Text(String),
+    Expression(ExpressionId),
+    Template(TemplateId),
+}

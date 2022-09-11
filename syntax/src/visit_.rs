@@ -13,6 +13,10 @@ pub trait Visitor: Sized {
         walk_function(self, function_id)
     }
 
+    fn visit_component(&self, component_id: ComponentId) -> Result<()> {
+        walk_component(self, component_id)
+    }
+
     fn visit_expression(&self, expression: &mut Expression) -> Result<()> {
         Ok(())
     }
@@ -34,6 +38,9 @@ fn walk_module(visitor: &impl Visitor, module_id: ModuleId) -> Result<()> {
             Definition::Function(function_id) => {
                 visitor.visit_function(*function_id)?;
             }
+            Definition::Component(component_id) => {
+                visitor.visit_component(*component_id)?;
+            }
             Definition::Const(const_) => {
                 let arena = visitor.context();
                 let const_ = arena.consts.get(*const_).unwrap();
@@ -54,6 +61,13 @@ fn walk_function(visitor: &impl Visitor, function_id: FunctionId) -> Result<()> 
     walk_block(visitor, function.body.unwrap())
 }
 
+fn walk_component(visitor: &impl Visitor, component_id: ComponentId) -> Result<()> {
+    let arena = visitor.context();
+    let component = arena.components.get(component_id).unwrap();
+    let component = component.borrow();
+    walk_block(visitor, component.body.unwrap())
+}
+
 fn walk_block(visitor: &impl Visitor, block_id: BlockId) -> Result<()> {
     let arena = visitor.context();
     let block = arena.blocks.get(block_id).unwrap();
@@ -64,6 +78,9 @@ fn walk_block(visitor: &impl Visitor, block_id: BlockId) -> Result<()> {
                 visit_expression(visitor, *expression_id)?;
             }
             Statement::Let { value, .. } => {
+                visit_expression(visitor, *value)?;
+            }
+            Statement::State { value, .. } => {
                 visit_expression(visitor, *value)?;
             }
             Statement::Return(expression_id) => {

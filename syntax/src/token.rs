@@ -3,7 +3,7 @@ use crate::Precedence;
 use common::symbol::Symbol;
 use std::fmt::{Debug, Display};
 
-use crate::ast::BinOp;
+use crate::ast::{BinOp, UnOp};
 
 #[derive(Clone, PartialEq, Eq)]
 pub struct Token {
@@ -35,7 +35,9 @@ impl Into<BinOp> for Token {
             TokenKind::And => And,
             TokenKind::Or => Or,
             TokenKind::GreaterThan => GreaterThan,
+            TokenKind::GreaterThanEquals => GreaterThanEquals,
             TokenKind::LessThan => LessThan,
+            TokenKind::LessThanEquals => LessThanEquals,
             TokenKind::Pipeline => Pipeline,
             TokenKind::DoubleEquals => DoubleEquals,
             TokenKind::BinAnd => BinAnd,
@@ -80,7 +82,7 @@ impl Token {
             // Mul => PRODUCT,
             // Div => PRODUCT,
             // DblEquals => COMPARE,
-            LessThan | GreaterThan | DoubleEquals => Compare,
+            LessThan | LessThanEquals | GreaterThan | GreaterThanEquals | DoubleEquals => Compare,
             Range => Prefix,
             _ => None,
         }
@@ -186,8 +188,12 @@ pub enum TokenKind {
     Colon,
     /// The '<' character
     LessThan,
+    /// The '<=' character
+    LessThanEquals,
     /// The '>' character
     GreaterThan,
+    /// The '>=' character
+    GreaterThanEquals,
     /// The '|' character
     Pipe,
     /// The '_' character
@@ -256,7 +262,9 @@ impl Display for TokenKind {
             TokenKind::Slash => write!(f, "/"),
             TokenKind::Colon => write!(f, ":"),
             TokenKind::LessThan => write!(f, "<"),
+            TokenKind::LessThanEquals => write!(f, "<="),
             TokenKind::GreaterThan => write!(f, ">"),
+            TokenKind::GreaterThanEquals => write!(f, ">="),
             TokenKind::Pipe => write!(f, "|"),
             TokenKind::Range => write!(f, ".."),
             TokenKind::EOF => write!(f, "EOF"),

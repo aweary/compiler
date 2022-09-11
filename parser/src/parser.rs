@@ -874,9 +874,8 @@ impl<'s> ParserImpl<'s> {
     fn infix_expression(&mut self, prefix: Expression) -> Result<Expression> {
         use TokenKind::*;
         match self.peek()?.kind {
-            Plus | Minus | Star | Slash | LessThan | GreaterThan | DoubleEquals | And | BinAnd => {
-                self.binary_expression(prefix)
-            }
+            Plus | Minus | Star | Slash | LessThan | LessThanEquals | GreaterThan
+            | GreaterThanEquals | DoubleEquals | And | BinAnd => self.binary_expression(prefix),
             Equals => self.assignment_expression(prefix),
             LParen => self.call_expression(prefix),
             Dot => self.member_expression(prefix),

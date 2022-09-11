@@ -35,8 +35,11 @@ fn parse(db: &dyn Parser, path: PathBuf) -> Result<()> {
     let cfg_analysis = ControlFlowAnalysis::new(&mut arena);
     cfg_analysis.visit_module(module_id)?;
     let cfg_map = cfg_analysis.finish();
-    for (_, cfg) in cfg_map.iter() {
-        codegen_from_cfg(cfg, &mut arena)?;
+    for (function_id, cfg) in cfg_map.iter() {
+        let function = arena.functions.get(*function_id).unwrap().borrow();
+        println!("Codegen for function '{}'", function.name.symbol);
+        drop(function);
+        let body = codegen_from_cfg(cfg, &mut arena)?;
     }
 
     Ok(())
@@ -87,6 +90,13 @@ impl<'source, 'ctx> ParserImpl<'source, 'ctx> {
             TokenKind::Const => {
                 let const_id = self.parse_const()?;
                 Ok(Definition::Const(const_id))
+            }
+            TokenKind::Component => {
+                let component_id = self.parse_component()?;
+                Ok(Definition::Component(component_id))
+            }
+            TokenKind::Enum => {
+                todo!("enum")
             }
             _ => {
                 let token = self.next()?;
@@ -223,6 +233,36 @@ impl<'source, 'ctx> ParserImpl<'source, 'ctx> {
         Ok(function_id)
     }
 
+    fn parse_component(&mut self) -> Result<ComponentId> {
+        self.expect(TokenKind::Component)?;
+        let name = self.identifier()?;
+        let symbol = name.symbol;
+        let parameters = self.parse_parameters()?;
+        let component = Component {
+            body: None,
+            name,
+            parameters,
+        };
+        let component_id = self.ctx.alloc_component(component);
+        self.scope_map
+            .define(symbol, Binding::Component(component_id));
+        let body = self.parse_block()?;
+        let component = self.ctx.components.get_mut(component_id).unwrap();
+        let mut component = component.borrow_mut();
+        component.body = Some(body);
+        Ok(component_id)
+    }
+
+    fn parse_enum(&mut self) -> Result<EnumId> {
+        self.expect(TokenKind::Enum)?;
+        let name = self.identifier()?;
+        let symbol = name.symbol;
+        let enum_ = Enum {
+            name,
+            variants: todo!(),
+        };
+    }
+
     fn parse_block(&mut self) -> Result<BlockId> {
         self.expect(TokenKind::LBrace)?;
         let mut statements = vec![];
@@ -242,6 +282,7 @@ impl<'source, 'ctx> ParserImpl<'source, 'ctx> {
     fn parse_statement(&mut self) -> Result<StatementId> {
         match self.peek()?.kind {
             TokenKind::Let => self.parse_let(),
+            TokenKind::State => self.parse_state(),
             TokenKind::Return => self.parse_return(),
             TokenKind::If => self.parse_if(),
             TokenKind::While => self.parse_while(),
@@ -310,6 +351,18 @@ impl<'source, 'ctx> ParserImpl<'source, 'ctx> {
         let let_id = self.ctx.statements.alloc(let_);
         self.scope_map.define(symbol, Binding::Let(let_id));
         Ok(let_id)
+    }
+
+    fn parse_state(&mut self) -> Result<StatementId> {
+        self.expect(TokenKind::State)?;
+        let name = self.identifier()?;
+        let symbol = name.symbol;
+        self.expect(TokenKind::Equals)?;
+        let value = self.parse_expression(Precedence::None)?;
+        let state = Statement::State { name, value };
+        let state_id = self.ctx.statements.alloc(state);
+        self.scope_map.define(symbol, Binding::State(state_id));
+        Ok(state_id)
     }
 
     fn parse_expression(&mut self, precedence: Precedence) -> Result<ExpressionId> {
@@ -446,9 +499,8 @@ impl<'source, 'ctx> ParserImpl<'source, 'ctx> {
     fn parse_infix_expression(&mut self, prefix: ExpressionId) -> Result<ExpressionId> {
         use TokenKind::*;
         match self.peek()?.kind {
-            Plus | Minus | Star | Slash | LessThan | GreaterThan | DoubleEquals | And | BinAnd => {
-                self.binary_expression(prefix)
-            }
+            Plus | Minus | Star | Slash | LessThan | LessThanEquals | GreaterThan
+            | GreaterThanEquals | DoubleEquals | And | BinAnd => self.binary_expression(prefix),
             LParen => self.call_expression(prefix),
             // Equals => self.assignment_expression(prefix),
             // Dot => self.member_expression(prefix),
@@ -486,10 +538,84 @@ impl<'source, 'ctx> ParserImpl<'source, 'ctx> {
                 let token = self.next()?;
                 self.parse_expression_from_identifier(symbol, token.span)
             }
+            TokenKind::LessThan => {
+                let template = self.parse_template()?;
+                let expression_id = self.ctx.alloc_expression(Expression::Template(template));
+                Ok(expression_id)
+            }
             _ => {
                 println!("NOPE {:?}", self.peek()?);
                 todo!()
             }
+        }
+    }
+
+    fn parse_template(&mut self) -> Result<TemplateId> {
+        let open_tag = self.parse_template_open_tag()?;
+        if self.peek()?.kind == TokenKind::Slash {
+            self.next()?;
+            self.expect(TokenKind::GreaterThan)?;
+            let template = Template {
+                open_tag,
+                close_tag: None,
+                children: None,
+            };
+            let template_id = self.ctx.alloc_template(template);
+            return Ok(template_id);
+        }
+        todo!()
+    }
+
+    fn parse_template_open_tag(&mut self) -> Result<TemplateOpenTag> {
+        self.expect(TokenKind::LessThan)?;
+        let name = self.identifier()?;
+        let attributes = self.parse_template_attributes()?;
+        let open_tag = TemplateOpenTag { name, attributes };
+        Ok(open_tag)
+    }
+
+    fn parse_template_attributes(&mut self) -> Result<Vec<TemplateAttribute>> {
+        let mut attributes = vec![];
+        loop {
+            if self.peek()?.kind == TokenKind::GreaterThan || self.peek()?.kind == TokenKind::Slash
+            {
+                break;
+            }
+            let template_attribute = self.parse_template_attribute()?;
+            println!("ATTR {:?}", template_attribute);
+            attributes.push(template_attribute);
+        }
+        Ok(attributes)
+    }
+
+    fn parse_template_attribute(&mut self) -> Result<TemplateAttribute> {
+        let name = self.identifier()?;
+
+        if self.eat(TokenKind::Equals)? {
+            // TODO I don't think this is the right precedence
+            match self.peek()?.kind {
+                TokenKind::String(_) | TokenKind::True | TokenKind::False => {
+                    let value = self.parse_expression(Precedence::Prefix)?;
+                    let template_attribute = TemplateAttribute {
+                        name,
+                        value: Some(value),
+                    };
+                    Ok(template_attribute)
+                }
+                _ => {
+                    self.expect(TokenKind::LBrace)?;
+                    let value = self.parse_expression(Precedence::None)?;
+                    self.expect(TokenKind::RBrace)?;
+                    let template_attribute = TemplateAttribute {
+                        name,
+                        value: Some(value),
+                    };
+                    Ok(template_attribute)
+                }
+            }
+        } else {
+            let template_attribute = TemplateAttribute { name, value: None };
+            Ok(template_attribute)
         }
     }
 

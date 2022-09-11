@@ -124,6 +124,7 @@ fn codegen_statement(statement: StatementId, arena: &mut AstArena) -> Result<Str
             let value = codegen_expression(&expression)?;
             Ok(format!("return {};", value))
         }
+        Statement::State { .. } => todo!(),
         Statement::Expression(_) => todo!(),
         Statement::If(_) => todo!(),
         Statement::While { condition, body } => todo!(),

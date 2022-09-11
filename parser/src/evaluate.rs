@@ -86,7 +86,9 @@ pub fn evaluate_expression(
                         BinOp::Div => Some(Value::Number(left_value / right_value)),
                         BinOp::Mod => Some(Value::Number(left_value % right_value)),
                         BinOp::GreaterThan => Some(Value::Boolean(left_value > right_value)),
+                        BinOp::GreaterThanEquals => Some(Value::Boolean(left_value >= right_value)),
                         BinOp::LessThan => Some(Value::Boolean(left_value < right_value)),
+                        BinOp::LessThanEquals => Some(Value::Boolean(left_value <= right_value)),
                         _ => None,
                     },
                     // Two boolean values

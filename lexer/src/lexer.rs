@@ -88,8 +88,8 @@ impl<'s> Lexer<'s> {
             Some((_, '/')) => self.punc(Slash),
             Some((_, '*')) => self.punc(Star),
             Some((_, ':')) => self.punc(Colon),
-            Some((_, '<')) => self.punc(LessThan),
-            Some((_, '>')) => self.punc(GreaterThan),
+            Some((_, '<')) => self.less_than(),
+            Some((_, '>')) => self.greater_than(),
             Some((_, '|')) => self.punc(Pipe),
             Some((_, '_')) => self.punc(Underscore),
             Some((_, '\n')) => self.punc(Newline),
@@ -200,6 +200,44 @@ impl<'s> Lexer<'s> {
             _ => {
                 let end = start;
                 (Span::new(start as u32, end as u32), TokenKind::And)
+            }
+        };
+        let token = Token::new(kind, span);
+        Ok(token)
+    }
+
+    fn greater_than(&mut self) -> Result<Token> {
+        let (start, _) = self.chars.next().unwrap();
+        let (span, kind) = match self.chars.peek() {
+            Some((_, '=')) => {
+                let (end, _) = self.chars.next().unwrap();
+                (
+                    Span::new(start as u32, end as u32),
+                    TokenKind::GreaterThanEquals,
+                )
+            }
+            _ => {
+                let end = start;
+                (Span::new(start as u32, end as u32), TokenKind::GreaterThan)
+            }
+        };
+        let token = Token::new(kind, span);
+        Ok(token)
+    }
+
+    fn less_than(&mut self) -> Result<Token> {
+        let (start, _) = self.chars.next().unwrap();
+        let (span, kind) = match self.chars.peek() {
+            Some((_, '=')) => {
+                let (end, _) = self.chars.next().unwrap();
+                (
+                    Span::new(start as u32, end as u32),
+                    TokenKind::LessThanEquals,
+                )
+            }
+            _ => {
+                let end = start;
+                (Span::new(start as u32, end as u32), TokenKind::LessThan)
             }
         };
         let token = Token::new(kind, span);

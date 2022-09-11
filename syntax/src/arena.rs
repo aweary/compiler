@@ -12,6 +12,7 @@ pub type ComponentId = Id<Component>;
 pub type EnumId = Id<Enum>;
 pub type StatementId = Id<Statement>;
 pub type ExpressionId = Id<Expression>;
+pub type TemplateId = Id<Template>;
 
 pub fn alloc_expression(expression: Expression) -> ExpressionId {
     EXPRESSION_ARENA.with(|arena| arena.borrow_mut().alloc(expression))

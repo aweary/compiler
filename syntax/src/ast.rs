@@ -1,4 +1,4 @@
-use crate::arena::{self, FunctionId, StatementId, ExpressionId};
+use crate::arena::{self, ExpressionId, FunctionId, StatementId, TemplateId};
 use crate::span::Span;
 use common::scope_map::Referant;
 use common::symbol::Symbol;
@@ -307,10 +307,19 @@ pub enum BinOp {
     And,
     Or,
     GreaterThan,
+    GreaterThanEquals,
     LessThan,
+    LessThanEquals,
     Pipeline,
     BinOr,
     BinAnd,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum UnOp {
+    Not,
+    Increment,
+    Decrement,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -318,7 +327,6 @@ pub enum Value {
     Boolean(bool),
     Number(u32),
 }
-
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Expression {
@@ -436,4 +444,36 @@ impl std::cmp::PartialEq<&str> for Identifier {
     fn eq(&self, other: &&str) -> bool {
         format!("{}", self.symbol) == *other
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+
+pub struct TemplateOpenTag {
+    pub name: Identifier,
+    pub attributes: Vec<TemplateAttribute>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TemplateAttribute {
+    pub name: Identifier,
+    pub value: Option<Expression>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TemplateCloseTag {
+    pub name: Identifier,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Template {
+    pub open_tag: TemplateOpenTag,
+    pub children: Vec<TemplateChild>,
+    pub close_tag: TemplateCloseTag,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TemplateChild {
+    Text(String),
+    Expression(ExpressionId),
+    Template(TemplateId),
 }

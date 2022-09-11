@@ -65,7 +65,7 @@ pub fn constrct_cfg_from_block(
         let statement = ast.statements.get(*statement_id).unwrap();
 
         match statement {
-            Statement::Let { .. } | Statement::Expression(_) => {
+            Statement::Let { .. } | Statement::State { .. } | Statement::Expression(_) => {
                 basic_block.statements.push(*statement_id);
             }
             Statement::Return(expression_id) => {

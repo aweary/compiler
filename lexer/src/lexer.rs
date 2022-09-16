@@ -9,10 +9,18 @@ use syntax::span::Span;
 use syntax::token::{Token, TokenKind};
 use unicode_xid::UnicodeXID;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LexingMode {
+    Normal,
+    TemplateTag,
+    TemplateText,
+}
+
 pub struct Lexer<'s> {
     source: &'s str,
     chars: Peekable<CharIndices<'s>>,
     lookahead: VecDeque<Token>,
+    mode: LexingMode,
 }
 
 impl<'s> Lexer<'s> {
@@ -22,7 +30,12 @@ impl<'s> Lexer<'s> {
             chars,
             source,
             lookahead: VecDeque::with_capacity(2),
+            mode: LexingMode::Normal,
         }
+    }
+
+    pub fn set_mode(&mut self, mode: LexingMode) {
+        self.mode = mode;
     }
 
     pub fn lex(mut self) -> Result<TokenStream> {
@@ -67,6 +80,9 @@ impl<'s> Lexer<'s> {
             return Ok(token);
         }
         self.skip_whitespace();
+        if self.mode == LexingMode::TemplateText {
+            return self.template_text();
+        }
         let char = self.chars.peek();
         match char {
             Some((_, ch)) if ch.is_digit(10) => self.number(),
@@ -114,6 +130,38 @@ impl<'s> Lexer<'s> {
             self.lookahead.push_front(token);
         }
         Ok(self.lookahead.front().unwrap())
+    }
+
+    fn template_text(&mut self) -> Result<Token> {
+        match self.chars.peek() {
+            Some((_, '<')) => self.punc(TokenKind::LessThan),
+            Some((_, '>')) => self.punc(TokenKind::GreaterThan),
+            Some((_, '{')) => self.punc(TokenKind::LBrace),
+            Some((_, '}')) => self.punc(TokenKind::RBrace),
+            _ => {
+                let (start, _) = self.chars.next().unwrap();
+                let mut end = start;
+                while let Some((i, ch)) = self.chars.peek() {
+                    match ch {
+                        '{' | '}' | '<' | '>' => {
+                            break;
+                        }
+                        _ => {
+                            end = *i;
+                            self.skip();
+                        }
+                    }
+                }
+                let span = Span::new(start as u32, end as u32);
+                let word = &self.source[start..end + 1];
+                // TODO dont think this is the right way to handle whitespace
+                let word = word.trim();
+                let symbol = Symbol::intern(word);
+                let kind = TokenKind::TemplateString(symbol);
+                let token = Token::new(kind, span);
+                Ok(token)
+            }
+        }
     }
 
     /// We don't create tokens for comments at the moment. This

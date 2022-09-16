@@ -1,7 +1,6 @@
 use crate::{ast::BinOp, span::Span};
 use common::scope_map::Referant;
 use common::symbol::Symbol;
-use diagnostics::result::Result;
 use id_arena::{Arena, Id};
 use std::cell::RefCell;
 
@@ -183,6 +182,34 @@ pub enum Binding {
     Component(ComponentId),
 }
 
+impl Binding {
+    pub fn to_string(&self, arena: &AstArena) -> String {
+        match self {
+            Binding::Let(statent_id) => {
+                let statement = &arena.statements[*statent_id];
+                match statement {
+                    Statement::Let { name, .. } => name.symbol.to_string(),
+                    _ => unreachable!(),
+                }
+            }
+            Binding::State(statement_id) => {
+                let statement = &arena.statements[*statement_id];
+                match statement {
+                    Statement::State { name, .. } => name.symbol.to_string(),
+                    _ => unreachable!(),
+                }
+            }
+            Binding::Const(_) => todo!(),
+            Binding::Function(_) => todo!(),
+            Binding::Component(_) => todo!(),
+            Binding::Parameter(parameter_id) => {
+                let parameter = &arena.parameters[*parameter_id];
+                parameter.name.symbol.to_string()
+            }
+        }
+    }
+}
+
 impl Referant for Binding {}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -208,7 +235,7 @@ pub struct TemplateOpenTag {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TemplateAttribute {
     pub name: Identifier,
-    pub value: Option<ExpressionId>,
+    pub value: ExpressionId,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -225,7 +252,7 @@ pub struct Template {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TemplateChild {
-    Text(String),
+    String(Symbol),
     Expression(ExpressionId),
     Template(TemplateId),
 }

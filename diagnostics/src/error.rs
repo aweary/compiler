@@ -418,13 +418,20 @@ pub fn unreachable_code<T>(span: impl Into<Range<usize>>) -> Result<T> {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Error {
-    IO,
+    IO(String),
+    Fmt,
     Lexing,
     Diagnostic(Diagnostic),
 }
 
 impl From<io::Error> for Error {
-    fn from(_err: io::Error) -> Self {
-        Error::IO
+    fn from(err: io::Error) -> Self {
+        Error::IO(err.to_string())
+    }
+}
+
+impl From<std::fmt::Error> for Error {
+    fn from(_err: std::fmt::Error) -> Self {
+        Error::Fmt
     }
 }

@@ -1,8 +1,7 @@
-use log::debug;
 use petgraph::dot::Dot;
 use petgraph::graph::{DiGraph, NodeIndex};
-use petgraph::visit::{ControlFlow, DfsEvent, IntoNodeReferences};
-use std::collections::{HashMap, HashSet, VecDeque};
+use petgraph::visit::{ControlFlow, DfsEvent};
+use std::collections::{HashMap, VecDeque};
 use std::fmt::Debug;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

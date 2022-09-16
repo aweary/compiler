@@ -4,16 +4,14 @@ use lexer::Lexer;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::vec;
-use syntax::arena::{alloc_expression, alloc_function, with_mut_function};
+use syntax::arena::alloc_expression;
 use syntax::{
     arena::{AstArena, FunctionId, StatementId},
     ast::*,
-    visit::Visitor,
     Precedence, Span, Token, TokenKind,
 };
 use vfs::FileSystem;
 
-use crate::control_flow::ControlFlowAnalysis;
 use common::scope_map::ScopeMap;
 use common::symbol::Symbol;
 use log::debug;

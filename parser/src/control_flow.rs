@@ -13,9 +13,15 @@ use common::control_flow_graph::{BasicBlock, BlockIndex, ControlFlowEdge, Contro
 
 use crate::evaluate::{evaluate_expression, CallContext};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum CFGKey {
+    Function(FunctionId),
+    Component(ComponentId),
+}
+
 pub struct ControlFlowAnalysis<'a, T, E, V> {
     ast: &'a mut AstArena,
-    cfg_map: RefCell<HashMap<FunctionId, ControlFlowGraph<T, E, V>>>,
+    cfg_map: RefCell<HashMap<CFGKey, ControlFlowGraph<T, E, V>>>,
 }
 
 impl<'a, T, E, V> ControlFlowAnalysis<'a, T, E, V> {
@@ -26,7 +32,7 @@ impl<'a, T, E, V> ControlFlowAnalysis<'a, T, E, V> {
         }
     }
 
-    pub fn finish(self) -> HashMap<FunctionId, ControlFlowGraph<T, E, V>> {
+    pub fn finish(self) -> HashMap<CFGKey, ControlFlowGraph<T, E, V>> {
         self.cfg_map.into_inner()
     }
 }
@@ -46,7 +52,22 @@ impl<'a> Visitor for ControlFlowAnalysis<'a, StatementId, ExpressionId, evaluate
         let function = function.borrow();
         let body = arena.blocks.get(function.body.unwrap()).unwrap();
         let cfg = constrct_cfg_from_block(body, arena, None);
-        self.cfg_map.borrow_mut().insert(function_id, cfg);
+        self.cfg_map
+            .borrow_mut()
+            .insert(CFGKey::Function(function_id), cfg);
+        Ok(())
+    }
+
+    fn visit_component(&self, component_id: ComponentId) -> Result<()> {
+        let arena = self.context();
+        let component = arena.components.get(component_id).unwrap();
+        let component = component.borrow();
+        let body = arena.blocks.get(component.body.unwrap()).unwrap();
+        let cfg = constrct_cfg_from_block(body, arena, None);
+        // cfg.print();
+        self.cfg_map
+            .borrow_mut()
+            .insert(CFGKey::Component(component_id), cfg);
         Ok(())
     }
 }

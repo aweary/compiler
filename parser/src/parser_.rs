@@ -1,6 +1,7 @@
 use common::{scope_map::ScopeMap, symbol::Symbol};
 use diagnostics::result::Result;
-use lexer::Lexer;
+use lexer::{Lexer, LexingMode};
+use log::debug;
 use syntax::{ast::BinOp, ast_::*, visit_::Visitor, Precedence, Span, Token, TokenKind};
 
 use std::{collections::HashMap, path::PathBuf};
@@ -8,9 +9,9 @@ use vfs::FileSystem;
 
 use crate::evaluate::ExpressionEvaluator;
 
-use crate::control_flow::ControlFlowAnalysis;
+use crate::control_flow::{CFGKey, ControlFlowAnalysis};
 
-use codegen::codegen_from_cfg;
+use codegen::Codegen;
 
 #[salsa::query_group(ParserDatabase)]
 pub trait Parser: FileSystem {
@@ -23,25 +24,40 @@ fn parse(db: &dyn Parser, path: PathBuf) -> Result<()> {
     let mut arena = AstArena::default();
     let mut parser = ParserImpl::new(&source, &mut arena);
     let module_id = parser.parse_module()?;
-    let evaluate = ExpressionEvaluator::new(&mut arena);
+    // Evaluate step
+    {
+        let evaluate = ExpressionEvaluator::new(&mut arena);
 
-    evaluate.visit_module(module_id)?;
-    // We want to do constant propagation before we do control flow analysis.
-    // That way we can populate known values in call expressions and generate
-    // control flow graphs that have annotated return value data.
-    // That way we support constant functions, where we can statically determine
-    // the return value of a function and inline.
+        evaluate.visit_module(module_id)?;
+        // We want to do constant propagation before we do control flow analysis.
+        // That way we can populate known values in call expressions and generate
+        // control flow graphs that have annotated return value data.
+        // That way we support constant functions, where we can statically determine
+        // the return value of a function and inline.
 
-    let cfg_analysis = ControlFlowAnalysis::new(&mut arena);
-    cfg_analysis.visit_module(module_id)?;
-    let cfg_map = cfg_analysis.finish();
-    for (function_id, cfg) in cfg_map.iter() {
-        let function = arena.functions.get(*function_id).unwrap().borrow();
-        println!("Codegen for function '{}'", function.name.symbol);
-        drop(function);
-        let body = codegen_from_cfg(cfg, &mut arena)?;
+        let cfg_analysis = ControlFlowAnalysis::new(&mut arena);
+        cfg_analysis.visit_module(module_id)?;
+        let cfg_map = cfg_analysis.finish();
+        let mut codegen = Codegen::new("main".to_string(), &mut arena);
+
+        for (key, cfg) in cfg_map.iter() {
+            match key {
+                CFGKey::Function(function_id) => {
+                    codegen.codegen_function(*function_id, cfg)?;
+                }
+                CFGKey::Component(component_id) => {
+                    codegen.codegen_component(*component_id, cfg)?;
+                    // ...
+                }
+            }
+        }
+
+        // Path should be fixtures/output.js from the project root, absolute
+        let path = PathBuf::from("fixtures/output.js");
+
+        println!("Writing to {:?}", path);
+        codegen.write(path)?;
     }
-
     Ok(())
 }
 
@@ -126,7 +142,6 @@ impl<'source, 'ctx> ParserImpl<'source, 'ctx> {
     fn parse_type(&mut self) -> Result<Type> {
         // Parse function parameters for types like (a: string, b: int) => int
         if self.eat(TokenKind::LParen)? {
-            let span = self.span;
             let mut parameters = vec![];
             loop {
                 if self.peek()?.kind == TokenKind::RParen {
@@ -143,7 +158,6 @@ impl<'source, 'ctx> ParserImpl<'source, 'ctx> {
             self.expect(TokenKind::RParen)?;
             self.expect(TokenKind::Arrow)?;
             let return_type = self.parse_type()?.into();
-            let span = span.merge(self.span);
             return Ok(Type::Function {
                 parameters,
                 return_type,
@@ -251,16 +265,6 @@ impl<'source, 'ctx> ParserImpl<'source, 'ctx> {
         let mut component = component.borrow_mut();
         component.body = Some(body);
         Ok(component_id)
-    }
-
-    fn parse_enum(&mut self) -> Result<EnumId> {
-        self.expect(TokenKind::Enum)?;
-        let name = self.identifier()?;
-        let symbol = name.symbol;
-        let enum_ = Enum {
-            name,
-            variants: todo!(),
-        };
     }
 
     fn parse_block(&mut self) -> Result<BlockId> {
@@ -456,7 +460,7 @@ impl<'source, 'ctx> ParserImpl<'source, 'ctx> {
                     arguments.push(argument);
                 } else {
                     // Positional argument
-                    let expr = self.parse_expression_from_identifier(name.symbol, name.span)?;
+                    let _expr = self.parse_expression_from_identifier(name.symbol, name.span)?;
                     if call_format == CallFormat::Named {
                         todo!()
                         // use diagnostics::error::positional_argument_after_named;
@@ -539,8 +543,18 @@ impl<'source, 'ctx> ParserImpl<'source, 'ctx> {
                 self.parse_expression_from_identifier(symbol, token.span)
             }
             TokenKind::LessThan => {
+                self.expect(TokenKind::LessThan)?;
                 let template = self.parse_template()?;
                 let expression_id = self.ctx.alloc_expression(Expression::Template(template));
+                Ok(expression_id)
+            }
+            TokenKind::LParen => {
+                self.next()?;
+                let span = self.span;
+                let expression_id = self.parse_expression(Precedence::None)?;
+                self.expect(TokenKind::RParen)?;
+                let span = span.merge(self.prev_span);
+                self.spans.insert(expression_id, span);
                 Ok(expression_id)
             }
             _ => {
@@ -552,7 +566,9 @@ impl<'source, 'ctx> ParserImpl<'source, 'ctx> {
 
     fn parse_template(&mut self) -> Result<TemplateId> {
         let open_tag = self.parse_template_open_tag()?;
+        debug!("parse_template: open_tag = {:#?}", open_tag);
         if self.peek()?.kind == TokenKind::Slash {
+            debug!("parse_template: self-closing tag");
             self.next()?;
             self.expect(TokenKind::GreaterThan)?;
             let template = Template {
@@ -563,11 +579,92 @@ impl<'source, 'ctx> ParserImpl<'source, 'ctx> {
             let template_id = self.ctx.alloc_template(template);
             return Ok(template_id);
         }
-        todo!()
+        self.expect(TokenKind::GreaterThan)?;
+        self.lexer.set_mode(LexingMode::TemplateText);
+        let (template_children, close_tag) = self.parse_template_children_and_close_tag()?;
+        debug!(
+            "parse_template: template_children = {:#?}",
+            template_children
+        );
+        debug!("parse_template: close_tag = {:#?}", close_tag);
+        let template = Template {
+            open_tag,
+            close_tag: Some(close_tag),
+            children: Some(template_children),
+        };
+        let template_id = self.ctx.alloc_template(template);
+        Ok(template_id)
+    }
+
+    fn parse_template_children_and_close_tag(
+        &mut self,
+    ) -> Result<(Vec<TemplateChild>, TemplateCloseTag)> {
+        let mut children = Vec::new();
+        let mut close_tag = None;
+        loop {
+            match self.peek()?.kind {
+                TokenKind::TemplateString(symbol) => {
+                    debug!(
+                        "parse_template_children_and_close_tag: TemplateString({})",
+                        symbol
+                    );
+                    self.skip()?;
+                    // TODO don't think this is the right way to handle whitespace
+                    if symbol.to_string().is_empty() {
+                        continue;
+                    }
+                    let child = TemplateChild::String(symbol);
+                    children.push(child);
+                }
+                TokenKind::LBrace => {
+                    self.expect(TokenKind::LBrace)?;
+                    self.lexer.set_mode(LexingMode::Normal);
+                    let expression = self.parse_expression(Precedence::None)?;
+                    self.lexer.set_mode(LexingMode::TemplateText);
+                    self.expect(TokenKind::RBrace)?;
+                    let child = TemplateChild::Expression(expression);
+                    children.push(child);
+                }
+                TokenKind::LessThan => {
+                    self.lexer.set_mode(LexingMode::Normal);
+                    self.expect(TokenKind::LessThan)?;
+                    if self.eat(TokenKind::Slash)? {
+                        // This is a close tag, not a nested template
+                        let name = self.identifier()?;
+                        debug!(
+                            "parse_template_children_and_close_tag: closing tag for </{}>",
+                            name.symbol
+                        );
+
+                        self.expect(TokenKind::GreaterThan)?;
+                        close_tag = Some(TemplateCloseTag { name });
+                        break;
+                    } else {
+                        debug!("parse_template_children_and_close_tag: nested template");
+                        let template_id = self.parse_template()?;
+                        self.lexer.set_mode(LexingMode::TemplateText);
+                        let child = TemplateChild::Template(template_id);
+                        children.push(child);
+                    }
+                }
+                _ => {
+                    break;
+                }
+            }
+        }
+        debug!(
+            "parse_template_children_and_close_tag: children = {:#?}",
+            children
+        );
+        debug!(
+            "parse_template_children_and_close_tag: close_tag = {:#?}",
+            close_tag
+        );
+        // TODO better error message for missing close tag
+        Ok((children, close_tag.expect("should have parsed close tag")))
     }
 
     fn parse_template_open_tag(&mut self) -> Result<TemplateOpenTag> {
-        self.expect(TokenKind::LessThan)?;
         let name = self.identifier()?;
         let attributes = self.parse_template_attributes()?;
         let open_tag = TemplateOpenTag { name, attributes };
@@ -582,40 +679,29 @@ impl<'source, 'ctx> ParserImpl<'source, 'ctx> {
                 break;
             }
             let template_attribute = self.parse_template_attribute()?;
-            println!("ATTR {:?}", template_attribute);
             attributes.push(template_attribute);
         }
         Ok(attributes)
     }
 
     fn parse_template_attribute(&mut self) -> Result<TemplateAttribute> {
-        let name = self.identifier()?;
-
-        if self.eat(TokenKind::Equals)? {
-            // TODO I don't think this is the right precedence
-            match self.peek()?.kind {
-                TokenKind::String(_) | TokenKind::True | TokenKind::False => {
-                    let value = self.parse_expression(Precedence::Prefix)?;
-                    let template_attribute = TemplateAttribute {
-                        name,
-                        value: Some(value),
-                    };
-                    Ok(template_attribute)
-                }
-                _ => {
-                    self.expect(TokenKind::LBrace)?;
-                    let value = self.parse_expression(Precedence::None)?;
-                    self.expect(TokenKind::RBrace)?;
-                    let template_attribute = TemplateAttribute {
-                        name,
-                        value: Some(value),
-                    };
-                    Ok(template_attribute)
-                }
+        // We allow keywords here
+        let name = self.identifier_loose()?;
+        self.expect(TokenKind::Equals)?;
+        // TODO I don't think this is the right precedence
+        match self.peek()?.kind {
+            TokenKind::String(_) | TokenKind::True | TokenKind::False => {
+                let value = self.parse_expression(Precedence::Prefix)?;
+                let template_attribute = TemplateAttribute { name, value: value };
+                Ok(template_attribute)
             }
-        } else {
-            let template_attribute = TemplateAttribute { name, value: None };
-            Ok(template_attribute)
+            _ => {
+                self.expect(TokenKind::LBrace)?;
+                let value = self.parse_expression(Precedence::None)?;
+                self.expect(TokenKind::RBrace)?;
+                let template_attribute = TemplateAttribute { name, value };
+                Ok(template_attribute)
+            }
         }
     }
 
@@ -635,7 +721,7 @@ impl<'source, 'ctx> ParserImpl<'source, 'ctx> {
             let maybe_reference_span: Option<Span> = None;
             let max_edit_distance = 2;
             for scope in self.scope_map.scope_iter() {
-                for (binding_symbol, (binding, _)) in &scope.bindings {
+                for (binding_symbol, (_, _)) in &scope.bindings {
                     let binding_str = format!("{}", binding_symbol);
                     let distance = edit_distance(&binding_str, &symbol_str);
                     if distance <= max_edit_distance {
@@ -654,6 +740,25 @@ impl<'source, 'ctx> ParserImpl<'source, 'ctx> {
         match token.kind {
             TokenKind::Identifier(symbol) => Ok(Identifier {
                 symbol,
+                span: token.span,
+            }),
+            _ => {
+                use diagnostics::error::expected_identifier;
+                expected_identifier(token.span, token.kind)
+            }
+        }
+    }
+
+    // Allows identifiers that are keywords
+    fn identifier_loose(&mut self) -> Result<Identifier> {
+        let token = self.next()?;
+        match token.kind {
+            TokenKind::Identifier(symbol) => Ok(Identifier {
+                symbol,
+                span: token.span,
+            }),
+            TokenKind::Type => Ok(Identifier {
+                symbol: Symbol::intern("type"),
                 span: token.span,
             }),
             _ => {
@@ -719,3 +824,4 @@ impl<'source, 'ctx> ParserImpl<'source, 'ctx> {
         }
     }
 }
+//

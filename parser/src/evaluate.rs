@@ -1,7 +1,11 @@
 use std::collections::HashMap;
 
 use diagnostics::result::Result;
-use syntax::{ast::BinOp, ast_::*, visit_::Visitor};
+use syntax::{
+    ast::BinOp,
+    ast_::*,
+    visit_::{walk_expression, Visitor},
+};
 
 use crate::control_flow::constrct_cfg_from_block;
 
@@ -189,6 +193,7 @@ impl<'a> Visitor for ExpressionEvaluator<'a> {
         if let Some(value) = evaluate_expression(self.arena, expression, call_context.as_ref()) {
             *expression = value_to_expression(value);
         } else {
+            walk_expression(self, expression)?;
             // ...
         }
         Ok(())

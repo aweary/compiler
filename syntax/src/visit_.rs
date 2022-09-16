@@ -18,7 +18,7 @@ pub trait Visitor: Sized {
     }
 
     fn visit_expression(&self, expression: &mut Expression) -> Result<()> {
-        Ok(())
+        walk_expression(self, expression)
     }
 
     fn visit_const(&self, const_id: ConstId) -> Result<()> {
@@ -50,6 +50,40 @@ fn walk_module(visitor: &impl Visitor, module_id: ModuleId) -> Result<()> {
             }
             Definition::Struct(_) => todo!(),
         }
+    }
+    Ok(())
+}
+
+fn walk_template(visitor: &impl Visitor, template_id: TemplateId) -> Result<()> {
+    let template = visitor.context().templates.get(template_id).unwrap();
+    let template = template.borrow();
+    let open_tag = &template.open_tag;
+
+    for TemplateAttribute { value, .. } in &open_tag.attributes {
+        let value = visitor.context().expressions.get(*value).unwrap();
+        let mut value = value.borrow_mut();
+        visitor.visit_expression(&mut value)?;
+    }
+
+    if let Some(children) = &template.children {
+        for child in children {
+            match child {
+                TemplateChild::String(_) => {}
+                TemplateChild::Expression(expression_id) => {
+                    let expression = visitor.context().expressions.get(*expression_id).unwrap();
+                    let mut expression = expression.borrow_mut();
+                    visitor.visit_expression(&mut expression)?;
+                }
+                TemplateChild::Template(template_id) => walk_template(visitor, *template_id)?,
+            }
+        }
+    }
+    Ok(())
+}
+
+pub fn walk_expression(visitor: &impl Visitor, expression: &Expression) -> Result<()> {
+    if let Expression::Template(template_id) = expression {
+        walk_template(visitor, *template_id)?;
     }
     Ok(())
 }

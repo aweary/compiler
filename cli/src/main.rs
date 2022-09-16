@@ -53,16 +53,20 @@ async fn build(options: BuildOptions) {
     // Compile the entry point module so we can start building up
     // the import graph.
     let compiled = db.compile(entry_point.clone());
+
     match compiled {
         Ok(ast) => {
-            debug!("ast: {:#?}", ast);
+            debug!("AST: {:?}", ast);
         }
         Err(error) => {
+            println!("Error: {:?}", error);
             let path_str = entry_point.to_str().unwrap_or("Unknown File");
             use diagnostics::error::{report_diagnostic_to_term, Error};
             if let Error::Diagnostic(diagnostic) = error {
                 let source = db.file_text(entry_point.clone());
                 report_diagnostic_to_term(diagnostic, path_str, &source);
+            } else {
+                panic!("Unexpected error: {:?}", error);
             }
         }
     }
@@ -129,12 +133,14 @@ async fn watch(options: WatchOptions) {
                         // };
                         match compiled {
                             Ok(_ast) => {
-                                use std::io::Write;
                                 use diagnostics::termcolor::{
                                     Color, ColorChoice, ColorSpec, StandardStream, WriteColor,
                                 };
+                                use std::io::Write;
                                 let mut stdout = StandardStream::stdout(ColorChoice::Always);
-                                stdout.set_color(ColorSpec::new().set_fg(Some(Color::Green))).unwrap();
+                                stdout
+                                    .set_color(ColorSpec::new().set_fg(Some(Color::Green)))
+                                    .unwrap();
                                 writeln!(&mut stdout, "Compiled Successfully!").unwrap();
                             }
                             Err(error) => {

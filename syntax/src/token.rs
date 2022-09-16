@@ -3,7 +3,7 @@ use crate::Precedence;
 use common::symbol::Symbol;
 use std::fmt::{Debug, Display};
 
-use crate::ast::{BinOp, UnOp};
+use crate::ast::BinOp;
 
 #[derive(Clone, PartialEq, Eq)]
 pub struct Token {
@@ -148,8 +148,10 @@ pub enum TokenKind {
     Return,
     /// A user-defined identifier
     Identifier(Symbol),
-    /// A string literggal
+    /// A string literal
     String(Symbol),
+    /// A Template string literal
+    TemplateString(Symbol),
     /// A number literal
     Number(Symbol),
     /// Represents a Unicode newline
@@ -245,6 +247,7 @@ impl Display for TokenKind {
             // TODO implement Display for Symbol
             TokenKind::Identifier(sym) => write!(f, "{:?}", sym),
             TokenKind::String(sym) => write!(f, "\"{:?}\"", sym),
+            TokenKind::TemplateString(sym) => write!(f, "\"{:?}\"", sym),
             TokenKind::Number(sym) => write!(f, "{:?}", sym),
             TokenKind::Newline => write!(f, "\\n"),
             TokenKind::Equals => write!(f, "="),

@@ -9,7 +9,8 @@ use vfs::FileSystem;
 
 use crate::evaluate::ExpressionEvaluator;
 
-use crate::control_flow::{CFGKey, ControlFlowAnalysis};
+use crate::control_flow::ControlFlowAnalysis;
+use common::control_flow_graph::ControlFlowMapKey;
 
 use codegen::Codegen;
 
@@ -38,22 +39,13 @@ fn parse(db: &dyn Parser, path: PathBuf) -> Result<()> {
         let cfg_analysis = ControlFlowAnalysis::new(&mut arena);
         cfg_analysis.visit_module(module_id)?;
         let cfg_map = cfg_analysis.finish();
-        let mut codegen = Codegen::new("main".to_string(), &mut arena);
 
-        for (key, cfg) in cfg_map.iter() {
-            match key {
-                CFGKey::Function(function_id) => {
-                    codegen.codegen_function(*function_id, cfg)?;
-                }
-                CFGKey::Component(component_id) => {
-                    codegen.codegen_component(*component_id, cfg)?;
-                    // ...
-                }
-            }
-        }
+        let mut codegen = Codegen::new("main".to_string(), &mut arena, cfg_map);
+
+        codegen.codegen_module(module_id)?;
 
         // Path should be fixtures/output.js from the project root, absolute
-        let path = PathBuf::from("fixtures/output.js");
+        let path = PathBuf::from("fixtures/output/app.compiled.js");
 
         println!("Writing to {:?}", path);
         codegen.write(path)?;
@@ -97,19 +89,20 @@ impl<'source, 'ctx> ParserImpl<'source, 'ctx> {
     }
 
     fn parse_definition(&mut self) -> Result<Definition> {
+        let public = self.eat(TokenKind::Pub)?;
         // let is_public = self.eat(TokenKind::Pub)?;
-        match self.peek()?.kind {
+        let kind = match self.peek()?.kind {
             TokenKind::Fn => {
                 let function_id = self.parse_function()?;
-                Ok(Definition::Function(function_id))
+                DefinitionKind::Function(function_id)
             }
             TokenKind::Const => {
                 let const_id = self.parse_const()?;
-                Ok(Definition::Const(const_id))
+                DefinitionKind::Const(const_id)
             }
             TokenKind::Component => {
                 let component_id = self.parse_component()?;
-                Ok(Definition::Component(component_id))
+                DefinitionKind::Component(component_id)
             }
             TokenKind::Enum => {
                 todo!("enum")
@@ -124,7 +117,9 @@ impl<'source, 'ctx> ParserImpl<'source, 'ctx> {
                     token.kind,
                 );
             }
-        }
+        };
+        let definition = Definition { public, kind };
+        Ok(definition)
     }
 
     fn parse_const(&mut self) -> Result<ConstId> {
@@ -227,6 +222,7 @@ impl<'source, 'ctx> ParserImpl<'source, 'ctx> {
     }
 
     fn parse_function(&mut self) -> Result<FunctionId> {
+        debug!("parse_function");
         self.expect(TokenKind::Fn)?;
         let name = self.identifier()?;
         let symbol = name.symbol;
@@ -290,7 +286,27 @@ impl<'source, 'ctx> ParserImpl<'source, 'ctx> {
             TokenKind::Return => self.parse_return(),
             TokenKind::If => self.parse_if(),
             TokenKind::While => self.parse_while(),
-            _ => todo!(),
+            TokenKind::Identifier(symbol) => self.parse_statement_for_identifier(),
+            _ => {
+                let expression = self.parse_expression(Precedence::None)?;
+                Ok(self.ctx.statements.alloc(Statement::Expression(expression)))
+            }
+        }
+    }
+
+    fn parse_statement_for_identifier(&mut self) -> Result<StatementId> {
+        let ident = self.identifier()?;
+        if self.eat(TokenKind::Equals)? {
+            let expression = self.parse_expression(Precedence::None)?;
+            let (binding, _) = self.scope_map.resolve(&ident.symbol).unwrap();
+            let statement = Statement::Assignment {
+                name: binding.clone(),
+                value: expression,
+            };
+            Ok(self.ctx.statements.alloc(statement))
+        } else {
+            let expression = self.parse_expression(Precedence::None)?;
+            Ok(self.ctx.statements.alloc(Statement::Expression(expression)))
         }
     }
 
@@ -363,8 +379,9 @@ impl<'source, 'ctx> ParserImpl<'source, 'ctx> {
         let symbol = name.symbol;
         self.expect(TokenKind::Equals)?;
         let value = self.parse_expression(Precedence::None)?;
-        let state = Statement::State { name, value };
-        let state_id = self.ctx.statements.alloc(state);
+        let state = State { name, value };
+        let state_id = self.ctx.states.alloc(state);
+        let state_id = self.ctx.statements.alloc(Statement::State(state_id));
         self.scope_map.define(symbol, Binding::State(state_id));
         Ok(state_id)
     }
@@ -501,6 +518,7 @@ impl<'source, 'ctx> ParserImpl<'source, 'ctx> {
     }
 
     fn parse_infix_expression(&mut self, prefix: ExpressionId) -> Result<ExpressionId> {
+        debug!("parse_infix_expression {}", self.peek()?.kind);
         use TokenKind::*;
         match self.peek()?.kind {
             Plus | Minus | Star | Slash | LessThan | LessThanEquals | GreaterThan
@@ -513,7 +531,15 @@ impl<'source, 'ctx> ParserImpl<'source, 'ctx> {
         }
     }
 
+    fn parse_function_expression(&mut self, prefix: ExpressionId) -> Result<ExpressionId> {
+        let function_id = self.parse_function()?;
+        let expression = Expression::Function(function_id);
+        let expression_id = self.ctx.alloc_expression(expression);
+        Ok(expression_id)
+    }
+
     fn parse_prefix_expression(&mut self) -> Result<ExpressionId> {
+        debug!("parse_prefix_expression {}", self.peek()?.kind);
         match self.peek()?.kind {
             // Boolean expressions
             TokenKind::True | TokenKind::False => {
@@ -555,6 +581,11 @@ impl<'source, 'ctx> ParserImpl<'source, 'ctx> {
                 self.expect(TokenKind::RParen)?;
                 let span = span.merge(self.prev_span);
                 self.spans.insert(expression_id, span);
+                Ok(expression_id)
+            }
+            TokenKind::Fn => {
+                let function = self.parse_function()?;
+                let expression_id = self.ctx.alloc_expression(Expression::Function(function));
                 Ok(expression_id)
             }
             _ => {
@@ -667,7 +698,24 @@ impl<'source, 'ctx> ParserImpl<'source, 'ctx> {
     fn parse_template_open_tag(&mut self) -> Result<TemplateOpenTag> {
         let name = self.identifier()?;
         let attributes = self.parse_template_attributes()?;
-        let open_tag = TemplateOpenTag { name, attributes };
+        // Check if first letter of name is uppercase
+        let name_string = name.symbol.to_string();
+        let reference = if name_string.chars().next().unwrap().is_uppercase() {
+            if let Some((binding, _)) = self.scope_map.resolve(&name.symbol) {
+                Some(*binding)
+            } else {
+                // Unresolved error
+                use diagnostics::error::unknown_reference_error;
+                todo!("unknown reference error");
+            }
+        } else {
+            None
+        };
+        let open_tag = TemplateOpenTag {
+            name,
+            reference,
+            attributes,
+        };
         Ok(open_tag)
     }
 
@@ -824,4 +872,5 @@ impl<'source, 'ctx> ParserImpl<'source, 'ctx> {
         }
     }
 }
+
 //

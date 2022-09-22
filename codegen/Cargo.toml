@@ -10,6 +10,7 @@ edition = "2021"
 log = "0.4.11"
 indoc = "1.0.7"
 chrono = "0.4.22"
+indexmap = "1.9.1"
 diagnostics = { path = "../diagnostics" }
 syntax = { path = "../syntax" }
 common = { path = "../common" }

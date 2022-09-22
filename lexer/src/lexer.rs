@@ -73,16 +73,21 @@ impl<'s> Lexer<'s> {
         self.skip_while(|char| char != &'\n' && char.is_whitespace());
     }
 
+    fn skip_newlines(&mut self) {
+        self.skip_while(|char| char.is_whitespace());
+    }
+
     pub fn next_token(&mut self) -> Result<Token> {
         use TokenKind::*;
         // Read from the lookahead if its populated.
         if let Some(token) = self.lookahead.pop_front() {
             return Ok(token);
         }
-        self.skip_whitespace();
         if self.mode == LexingMode::TemplateText {
+            self.skip_newlines();
             return self.template_text();
         }
+        self.skip_whitespace();
         let char = self.chars.peek();
         match char {
             Some((_, ch)) if ch.is_digit(10) => self.number(),
@@ -155,7 +160,7 @@ impl<'s> Lexer<'s> {
                 let span = Span::new(start as u32, end as u32);
                 let word = &self.source[start..end + 1];
                 // TODO dont think this is the right way to handle whitespace
-                let word = word.trim();
+                // let word = word.trim();
                 let symbol = Symbol::intern(word);
                 let kind = TokenKind::TemplateString(symbol);
                 let token = Token::new(kind, span);

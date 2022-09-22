@@ -6,6 +6,7 @@ use diagnostics::result::Result;
 
 use id_arena::Id;
 
+use std::fmt::Display;
 use std::sync::Arc;
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
@@ -307,6 +308,30 @@ pub enum BinOp {
     Pipeline,
     BinOr,
     BinAnd,
+}
+
+impl Display for BinOp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            BinOp::Equals => write!(f, "="),
+            BinOp::DoubleEquals => write!(f, "=="),
+            BinOp::Add => write!(f, "+"),
+            BinOp::Sub => write!(f, "-"),
+            BinOp::Sum => write!(f, "+"),
+            BinOp::Mul => write!(f, "*"),
+            BinOp::Div => write!(f, "/"),
+            BinOp::Mod => write!(f, "%"),
+            BinOp::And => write!(f, "&&"),
+            BinOp::Or => write!(f, "||"),
+            BinOp::GreaterThan => write!(f, ">"),
+            BinOp::GreaterThanEquals => write!(f, ">="),
+            BinOp::LessThan => write!(f, "<"),
+            BinOp::LessThanEquals => write!(f, "<="),
+            BinOp::Pipeline => write!(f, "|>"),
+            BinOp::BinOr => write!(f, "|"),
+            BinOp::BinAnd => write!(f, "&"),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

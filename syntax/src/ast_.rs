@@ -1,5 +1,5 @@
 use crate::{ast::BinOp, span::Span};
-use common::scope_map::Referant;
+use common::scope_map::{Referant, Reference};
 use common::symbol::Symbol;
 use id_arena::{Arena, Id};
 use std::cell::RefCell;
@@ -16,6 +16,7 @@ pub struct AstArena {
     pub consts: Arena<Const>,
     pub parameters: Arena<Parameter>,
     pub templates: Arena<RefCell<Template>>,
+    pub states: Arena<State>,
 }
 
 impl AstArena {
@@ -47,13 +48,20 @@ pub type StatementId = Id<Statement>;
 pub type ConstId = Id<Const>;
 pub type ParameterId = Id<Parameter>;
 pub type EnumId = Id<Enum>;
+pub type StateId = Id<State>;
 
 pub struct Module {
     pub definitions: Vec<Definition>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Definition {
+pub struct Definition {
+    pub kind: DefinitionKind,
+    pub public: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DefinitionKind {
     Function(FunctionId),
     Component(ComponentId),
     Const(ConstId),
@@ -93,6 +101,18 @@ pub enum Expression {
         arguments: Vec<Argument>,
     },
     Template(TemplateId),
+    Function(FunctionId),
+}
+
+impl Expression {
+    pub fn is_constant(&self) -> bool {
+        match self {
+            Expression::Number(_) => true,
+            Expression::Boolean(_) => true,
+            Expression::String(_) => true,
+            _ => false,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -108,16 +128,35 @@ pub enum Statement {
         name: Identifier,
         value: ExpressionId,
     },
-    State {
-        name: Identifier,
-        value: ExpressionId,
-    },
+    State(StateId),
     Return(ExpressionId),
     If(If),
     While {
         condition: ExpressionId,
         body: BlockId,
     },
+    Assignment {
+        name: Binding,
+        value: ExpressionId,
+    },
+}
+
+#[derive(Debug)]
+pub struct State {
+    pub name: Identifier,
+    pub value: ExpressionId,
+}
+
+impl Statement {
+    pub fn is_state_assignment(&self) -> bool {
+        match self {
+            Statement::Assignment { name, .. } => match name {
+                Binding::State(_) => true,
+                _ => false,
+            },
+            _ => false,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -172,7 +211,7 @@ pub struct Identifier {
     pub symbol: Symbol,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Binding {
     Let(StatementId),
     State(StatementId),
@@ -195,17 +234,45 @@ impl Binding {
             Binding::State(statement_id) => {
                 let statement = &arena.statements[*statement_id];
                 match statement {
-                    Statement::State { name, .. } => name.symbol.to_string(),
+                    Statement::State(state_id) => {
+                        let state = &arena.states[*state_id];
+                        state.name.symbol.to_string()
+                    }
                     _ => unreachable!(),
                 }
             }
+            Binding::Function(function_id) => {
+                let function = &arena.functions[*function_id].borrow();
+                function.name.symbol.to_string()
+            }
             Binding::Const(_) => todo!(),
-            Binding::Function(_) => todo!(),
             Binding::Component(_) => todo!(),
             Binding::Parameter(parameter_id) => {
                 let parameter = &arena.parameters[*parameter_id];
                 parameter.name.symbol.to_string()
             }
+        }
+    }
+
+    pub fn to_state(&self, arena: &AstArena) -> Option<StateId> {
+        match self {
+            Binding::State(state_id) => {
+                let statement = &arena.statements[*state_id];
+                match statement {
+                    Statement::State(state_id) => Some(*state_id),
+                    _ => None,
+                }
+            }
+            _ => None,
+        }
+    }
+}
+
+impl Into<ComponentId> for Binding {
+    fn into(self) -> ComponentId {
+        match self {
+            Binding::Component(id) => id,
+            _ => unreachable!(),
         }
     }
 }
@@ -229,6 +296,7 @@ pub struct Variant {
 
 pub struct TemplateOpenTag {
     pub name: Identifier,
+    pub reference: Option<Binding>,
     pub attributes: Vec<TemplateAttribute>,
 }
 

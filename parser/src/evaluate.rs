@@ -138,6 +138,10 @@ pub fn evaluate_expression(
                     None
                 }
             }
+            Binding::State(statement_id) => {
+                // ...
+                None
+            }
             _ => None, // Binding::Function(function_id) => todo!(),
         },
         _ => None,
@@ -153,8 +157,10 @@ impl<'a> Visitor for ExpressionEvaluator<'a> {
         self.arena
     }
 
-    fn visit_expression(&self, expression: &mut Expression) -> Result<()> {
-        let call_context = if let Expression::Call { callee, arguments } = expression {
+    fn visit_expression(&self, expression_id: ExpressionId) -> Result<()> {
+        let expression = self.arena.expressions.get(expression_id).unwrap();
+        let expression = expression.borrow();
+        let call_context = if let Expression::Call { callee, arguments } = &*expression {
             let callee_expr = self
                 .arena
                 .expressions
@@ -190,10 +196,13 @@ impl<'a> Visitor for ExpressionEvaluator<'a> {
             None
         };
 
-        if let Some(value) = evaluate_expression(self.arena, expression, call_context.as_ref()) {
+        if let Some(value) = evaluate_expression(self.arena, &expression, call_context.as_ref()) {
+            drop(expression);
+            let expression = self.arena.expressions.get(expression_id).unwrap();
+            let mut expression = expression.borrow_mut();
             *expression = value_to_expression(value);
         } else {
-            walk_expression(self, expression)?;
+            walk_expression(self, expression_id)?;
             // ...
         }
         Ok(())

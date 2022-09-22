@@ -5,6 +5,15 @@ use std::collections::{HashMap, VecDeque};
 use std::fmt::Debug;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ControlFlowMapKey<F, C> {
+    Function(F),
+    Component(C),
+}
+
+pub type ControlFlowMap<F, C, T, E, V> =
+    HashMap<ControlFlowMapKey<F, C>, ControlFlowGraph<T, E, V>>;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct BlockIndex(pub NodeIndex);
 
 impl Into<NodeIndex> for BlockIndex {

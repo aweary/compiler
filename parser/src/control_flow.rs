@@ -7,21 +7,17 @@ use std::{
     ops::Deref,
 };
 use syntax::ast_::*;
-use syntax::visit_::Visitor;
+use syntax::visit_::{walk_component, walk_function, Visitor};
 
-use common::control_flow_graph::{BasicBlock, BlockIndex, ControlFlowEdge, ControlFlowGraph};
+use common::control_flow_graph::{
+    BasicBlock, BlockIndex, ControlFlowEdge, ControlFlowGraph, ControlFlowMap, ControlFlowMapKey,
+};
 
 use crate::evaluate::{evaluate_expression, CallContext};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum CFGKey {
-    Function(FunctionId),
-    Component(ComponentId),
-}
-
 pub struct ControlFlowAnalysis<'a, T, E, V> {
     ast: &'a mut AstArena,
-    cfg_map: RefCell<HashMap<CFGKey, ControlFlowGraph<T, E, V>>>,
+    cfg_map: RefCell<ControlFlowMap<FunctionId, ComponentId, T, E, V>>,
 }
 
 impl<'a, T, E, V> ControlFlowAnalysis<'a, T, E, V> {
@@ -32,7 +28,9 @@ impl<'a, T, E, V> ControlFlowAnalysis<'a, T, E, V> {
         }
     }
 
-    pub fn finish(self) -> HashMap<CFGKey, ControlFlowGraph<T, E, V>> {
+    pub fn finish(
+        self,
+    ) -> HashMap<ControlFlowMapKey<FunctionId, ComponentId>, ControlFlowGraph<T, E, V>> {
         self.cfg_map.into_inner()
     }
 }
@@ -47,6 +45,7 @@ impl<'a> Visitor for ControlFlowAnalysis<'a, StatementId, ExpressionId, evaluate
     }
 
     fn visit_function(&self, function_id: FunctionId) -> Result<()> {
+        println!("Visiting function {:?}", function_id);
         let arena = self.context();
         let function = arena.functions.get(function_id).unwrap();
         let function = function.borrow();
@@ -54,11 +53,12 @@ impl<'a> Visitor for ControlFlowAnalysis<'a, StatementId, ExpressionId, evaluate
         let cfg = constrct_cfg_from_block(body, arena, None);
         self.cfg_map
             .borrow_mut()
-            .insert(CFGKey::Function(function_id), cfg);
-        Ok(())
+            .insert(ControlFlowMapKey::Function(function_id), cfg);
+        walk_function(self, function_id)
     }
 
     fn visit_component(&self, component_id: ComponentId) -> Result<()> {
+        println!("Visiting component {:?}", component_id);
         let arena = self.context();
         let component = arena.components.get(component_id).unwrap();
         let component = component.borrow();
@@ -67,8 +67,8 @@ impl<'a> Visitor for ControlFlowAnalysis<'a, StatementId, ExpressionId, evaluate
         // cfg.print();
         self.cfg_map
             .borrow_mut()
-            .insert(CFGKey::Component(component_id), cfg);
-        Ok(())
+            .insert(ControlFlowMapKey::Component(component_id), cfg);
+        walk_component(self, component_id)
     }
 }
 
@@ -86,7 +86,10 @@ pub fn constrct_cfg_from_block(
         let statement = ast.statements.get(*statement_id).unwrap();
 
         match statement {
-            Statement::Let { .. } | Statement::State { .. } | Statement::Expression(_) => {
+            Statement::Let { .. }
+            | Statement::State { .. }
+            | Statement::Expression(_)
+            | Statement::Assignment { .. } => {
                 basic_block.statements.push(*statement_id);
             }
             Statement::Return(expression_id) => {

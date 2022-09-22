@@ -1,11 +1,19 @@
-component LoggedInButton() {
-  let a = 1
-  let b = 2
-  if b {
-    let c = 1
-    if a {
-      let d = 1
+
+
+pub component App {
+  state count = 0
+  fn handleClick {
+    if count < 10 {
+      count = count + 1
     }
-    let r = 2
   }
+  return (
+    <div>
+      <span>{count}</span>
+      <button onClick={handleClick}>Click me</button>
+      <div>
+        <h1>Hello, <span style="color: red">{count}</span></h1>
+      </div>
+    </div>
+  )
 }
